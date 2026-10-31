@@ -31,7 +31,9 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 - Colors: lyric text, highlight, secondary text (default white, white, white 70%),
   Auto Sync (highlight from the album's artwork colour), Reset.
 - Font: SF Pro, SF Rounded, New York, Helvetica Neue.
-- Show when unlocked, Cider token.
+- Open lyrics window (a normal resizable black window for when the Mac is unlocked).
+- Lyrics delay slider (-0.5 to +1.0 s); Bluetooth output adds +0.2 s automatically.
+- Cider token.
 
 ## Build
 

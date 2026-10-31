@@ -1,4 +1,5 @@
 import Combine
+import CoreAudio
 import IOKit.pwr_mgt
 import SkyLightWindow
 import SwiftUI
@@ -31,18 +32,15 @@ final class AppModel: ObservableObject {
     let player: PlayerMonitor
     private let store: LyricsStore
     private let overlay = OverlayWindow()
+    private let lyricsWindow = LyricsWindow()
     private let awake = DisplayAwake()
     private var subscriptions = Set<AnyCancellable>()
 
     @Published var lyrics: Lyrics?
     @Published var status = "Waiting for music"
     @Published var isLocked = false
-    @Published var showWhenUnlocked = UserDefaults.standard.bool(forKey: "showWhenUnlocked") {
-        didSet {
-            UserDefaults.standard.set(showWhenUnlocked, forKey: "showWhenUnlocked")
-            refresh()
-        }
-    }
+    /// Extra delay for the current audio output; Bluetooth headphones play ~0.2 s late.
+    @Published var outputDelay = 0.0
 
     init() {
         let cider = CiderClient()
@@ -75,6 +73,7 @@ final class AppModel: ObservableObject {
 
     private func trackChanged(_ track: Track?) {
         lyrics = nil
+        outputDelay = outputIsBluetooth() ? 0.2 : 0  // headphones can change between songs
         refresh()
         guard let track else {
             status = "Waiting for music"
@@ -94,9 +93,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Shows the overlay only while lyrics exist, music plays, and the Mac is locked (or the user wants it always).
+    func openLyricsWindow() {
+        lyricsWindow.open(AnyView(ConstellationView(model: self, player: player)))
+    }
+
+    /// Shows the lock screen overlay only while lyrics exist, music plays, and the Mac is locked.
     private func refresh() {
-        let show = lyrics != nil && player.isPlaying && (isLocked || showWhenUnlocked)
+        let show = lyrics != nil && player.isPlaying && isLocked
         if show {
             overlay.show(AnyView(ConstellationView(model: self, player: player)))
         } else {
@@ -139,6 +142,49 @@ final class OverlayWindow {
     }
 }
 
+/// An ordinary resizable window for watching the lyrics while the Mac is unlocked.
+@MainActor
+final class LyricsWindow {
+    private var window: NSWindow?
+
+    func open(_ content: AnyView) {
+        if window == nil {
+            let newWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 600),
+                                     styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                                     backing: .buffered, defer: false)
+            newWindow.title = "Lilt"
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.titleVisibility = .hidden
+            newWindow.backgroundColor = .black
+            newWindow.isReleasedWhenClosed = false  // so the menu can open it again after closing
+            newWindow.contentMinSize = NSSize(width: 480, height: 300)
+            newWindow.contentView = NSHostingView(rootView: content)
+            newWindow.center()
+            newWindow.setFrameAutosaveName("LiltLyricsWindow")  // remembers size and position
+            window = newWindow
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// True when the default output device is Bluetooth (AirPods and friends).
+func outputIsBluetooth() -> Bool {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                             mScope: kAudioObjectPropertyScopeGlobal,
+                                             mElement: kAudioObjectPropertyElementMain)
+    var device = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr
+    else { return false }
+
+    address.mSelector = kAudioDevicePropertyTransportType
+    var transport = UInt32(0)
+    size = UInt32(MemoryLayout<UInt32>.size)
+    guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return false }
+    return transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
+}
+
 /// Keeps the display from sleeping while lyrics are on screen.
 final class DisplayAwake {
     private var assertion: IOPMAssertionID = 0
@@ -169,6 +215,7 @@ struct MenuView: View {
     @AppStorage("secondaryColor") private var secondaryHex = Theme.defaultSecondary
     @AppStorage("autoSyncColors") private var autoSync = false
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
+    @AppStorage("lyricsDelay") private var delay = 0.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -199,7 +246,16 @@ struct MenuView: View {
             }
 
             Divider()
-            Toggle("Show when unlocked", isOn: $model.showWhenUnlocked)
+            Button("Open lyrics window") { model.openLyricsWindow() }
+            HStack {
+                Text("Lyrics delay")
+                Slider(value: $delay, in: -0.5...1.0, step: 0.05)
+                Text(String(format: "%+.2f s", delay)).monospacedDigit().frame(width: 52, alignment: .trailing)
+            }
+            if model.outputDelay > 0 {
+                Text("Bluetooth output: +0.20 s added automatically").font(.caption2).foregroundStyle(.secondary)
+            }
+            Divider()
             SecureField("Cider app token", text: $token)
             Text("Make one in Cider → Settings → Connectivity").font(.caption2).foregroundStyle(.secondary)
 

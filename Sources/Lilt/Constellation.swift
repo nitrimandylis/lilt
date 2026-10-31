@@ -16,6 +16,7 @@ struct ConstellationView: View {
     @AppStorage("secondaryColor") private var secondaryHex = Theme.defaultSecondary
     @AppStorage("autoSyncColors") private var autoSync = false
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
+    @AppStorage("lyricsDelay") private var delay = 0.0
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -23,6 +24,7 @@ struct ConstellationView: View {
                 makePainter(at: timeline.date).draw(context, size: size)
             }
         }
+        .background(Color.black)  // its own dark stage, not a see-through layer over apps
         .ignoresSafeArea()
     }
 
@@ -33,7 +35,8 @@ struct ConstellationView: View {
         }
         return ConstellationPainter(
             lines: model.lyrics?.lines ?? [],
-            songTime: player.position(at: date),
+            // Positive delay holds the lyrics back to match what you actually hear.
+            songTime: player.position(at: date) - delay - model.outputDelay,
             clock: date.timeIntervalSinceReferenceDate,
             textColor: colorFromHex(textHex),
             highlight: highlight,

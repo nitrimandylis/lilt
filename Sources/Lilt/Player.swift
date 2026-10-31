@@ -61,6 +61,12 @@ struct CiderClient {
         }
     }
 
+    /// Just the playback position, for the fast poll.
+    func currentTime() async -> Double? {
+        let time = await get("/api/v2/playback/time")?["data"] as? [String: Any]
+        return time?["currentTime"] as? Double
+    }
+
     func nowPlaying() async -> PlaybackState? {
         guard let nowPlaying = await get("/api/v1/playback/now-playing"),
               let info = nowPlaying["info"] as? [String: Any],
@@ -120,7 +126,11 @@ enum MusicApp {
     }
 }
 
-/// Polls the players twice a second and predicts the position between polls.
+/// Polls the players and predicts the position between polls.
+///
+/// Cider only refreshes its reported position about once a second, so a reading can be up to
+/// a second old. A reading is only fresh at the moment it changes, so we poll the position
+/// ten times a second and re-sync the clock on those changes, never on a stale value.
 @MainActor
 final class PlayerMonitor: ObservableObject {
     @Published private(set) var track: Track?
@@ -129,6 +139,7 @@ final class PlayerMonitor: ObservableObject {
     private let cider: CiderClient
     private var anchorPosition: Double = 0
     private var anchorDate = Date()
+    private var lastReported: Double = -1  // the last position value Cider sent
 
     init(cider: CiderClient) {
         self.cider = cider
@@ -136,9 +147,15 @@ final class PlayerMonitor: ObservableObject {
 
     func start() {
         Task {
+            var tick = 0
             while true {
-                await poll()
-                try? await Task.sleep(for: .milliseconds(500))
+                if tick % 5 == 0 {
+                    await poll()  // full check: which player, which track, playing or not
+                } else if track?.source == .cider && isPlaying, let time = await cider.currentTime() {
+                    absorb(time, source: .cider)  // quick check: just the position
+                }
+                tick += 1
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
     }
@@ -174,17 +191,35 @@ final class PlayerMonitor: ObservableObject {
             return
         }
 
-        // Only re-anchor on a real jump. Re-anchoring on every poll makes words jitter,
-        // because each reply is a little late.
-        let predicted = position(at: Date())
-        let jumped = abs(predicted - state.position) > 0.3
         let changed = state.track != track || state.isPlaying != isPlaying
-
         if state.track != track { track = state.track }
         if state.isPlaying != isPlaying { isPlaying = state.isPlaying }
-        if changed || jumped {
-            anchorPosition = state.position
-            anchorDate = Date()
+        if changed {
+            setAnchor(state.position)
+            lastReported = state.position
+            return
         }
+        absorb(state.position, source: state.track.source)
+    }
+
+    /// Decides whether a reported position should move our clock.
+    private func absorb(_ reported: Double, source: PlayerSource) {
+        let fresh = reported != lastReported
+        lastReported = reported
+        let error = position(at: Date()) - reported
+
+        if abs(error) > 1.5 {
+            setAnchor(reported)  // a seek, or the clock drifted badly
+        } else if source == .cider && fresh {
+            // Cider just ticked, so this value is at most one poll (0.1 s) old; split the difference.
+            setAnchor(reported + 0.05)
+        } else if source == .music && abs(error) > 0.3 {
+            setAnchor(reported)  // Music.app reports an exact position every time
+        }
+    }
+
+    private func setAnchor(_ position: Double) {
+        anchorPosition = position
+        anchorDate = Date()
     }
 }

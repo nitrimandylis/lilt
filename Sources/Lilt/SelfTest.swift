@@ -28,6 +28,8 @@ func runSelfTest() {
     precondition(segmentsCross(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 0, y: 10), CGPoint(x: 10, y: 0)), "an X crosses")
     precondition(!segmentsCross(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 0), CGPoint(x: 0, y: 5), CGPoint(x: 10, y: 5)), "parallel lines do not")
     precondition(segment(CGPoint(x: -5, y: 5), CGPoint(x: 15, y: 5), hits: CGRect(x: 0, y: 0, width: 10, height: 10)), "line through a box hits it")
+    precondition(WordIcons.shared.symbol(for: "hearts") != nil, "a plain noun finds a symbol")
+    precondition(WordIcons.shared.symbol(for: "the") == nil, "filler words get no icon")
     precondition(parseTime("00:00:10.050") == 10.05 && parseTime("12.3s") == 12.3, "time formats")
 
     print("selftest ok")
@@ -62,8 +64,12 @@ func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 
     switch style {
     case .constellation:
         scene = AnyView(Canvas { context, size in painter.draw(context, size: size) })
-    case .ship:
-        scene = AnyView(WallScene(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro))
+    case .ship, .visual:
+        scene = AnyView(WallScene(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro,
+                                  sway: style == .ship ? 1 : 0.5, withIcons: style == .visual))
+    case .fisheye, .fisheyeVisual:
+        scene = AnyView(FisheyeScene(lines: lines, songTime: songTime, colors: colors, font: .sfPro,
+                                     withIcons: style == .fisheyeVisual))
     case .codestyle:
         let code = CodePainter(lines: lines, songTime: songTime, clock: songTime)
         scene = AnyView(Canvas { context, size in code.draw(context, size: size) })

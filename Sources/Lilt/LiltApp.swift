@@ -96,6 +96,7 @@ final class AppModel: ObservableObject {
                 guard player.track == track else { return }  // the song changed while we waited
                 if palette == nil { palette = AlbumPalette(hexes: colors) }
                 if let found {
+                    WordIcons.shared.warm(found.lines)  // icons ready before they are needed
                     lyrics = found
                     status = found.wordTimed ? "Word-timed lyrics" : "Line-timed lyrics, word times estimated"
                     refresh()

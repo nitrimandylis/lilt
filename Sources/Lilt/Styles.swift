@@ -5,6 +5,9 @@ import SwiftUI
 enum LyricStyle: String, CaseIterable, Identifiable {
     case constellation = "Constellation"
     case ship = "Ship"
+    case visual = "Visual"
+    case fisheye = "Fisheye"
+    case fisheyeVisual = "Fisheye Visual"
     case codestyle = "Codestyle"
 
     var id: String { rawValue }
@@ -28,7 +31,13 @@ struct LyricsView: View {
         case .constellation:
             ConstellationView(model: model, player: player)
         case .ship:
-            WallView(model: model, player: player)
+            WallView(model: model, player: player, sway: 1, withIcons: false)
+        case .visual:
+            WallView(model: model, player: player, sway: 0.5, withIcons: true)
+        case .fisheye:
+            FisheyeView(model: model, player: player, withIcons: false)
+        case .fisheyeVisual:
+            FisheyeView(model: model, player: player, withIcons: true)
         case .codestyle:
             CodeView(model: model, player: player)
         }
@@ -72,6 +81,8 @@ struct StyleSettings {
 struct WallView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var player: PlayerMonitor
+    let sway: Double       // 1 for Ship, 0.5 for Visual
+    let withIcons: Bool
     var settings = StyleSettings()
 
     var body: some View {
@@ -80,7 +91,7 @@ struct WallView: View {
                       songTime: settings.songTime(player: player, model: model, at: timeline.date),
                       clock: timeline.date.timeIntervalSinceReferenceDate,
                       colors: settings.colors(palette: model.palette),
-                      font: settings.font)
+                      font: settings.font, sway: sway, withIcons: withIcons)
         }
         .background(Color.black)
         .ignoresSafeArea()
@@ -94,6 +105,8 @@ struct WallScene: View {
     let clock: Double
     let colors: LyricColors
     let font: LyricFont
+    var sway: Double = 1
+    var withIcons = false
 
     let visibleWords = 5
     let lineHold = 0.8  // seconds a line stays up after its last word ends
@@ -113,7 +126,7 @@ struct WallScene: View {
                 let item = words[position]
                 WallWord(text: item.word.text, id: item.id, fontSize: fontSize(item, wallHeight: wallHeight, width: size.width),
                          newest: position == words.count - 1, colors: colors, font: font,
-                         indent: size.width * 0.07)
+                         indent: size.width * 0.07, withIcon: withIcons)
                     .id(item.id)
                     .transition(.scale.combined(with: .opacity))
             }
@@ -121,9 +134,9 @@ struct WallScene: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.7), value: words.map(\.id))
         .frame(width: size.width, height: wallHeight)
         // The slow 3D drift. It follows the wall clock, so it keeps moving through pauses.
-        .rotation3DEffect(.degrees(sin(0.35 * clock) * 16), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
-        .rotation3DEffect(.degrees(sin(0.22 * clock) * 7), axis: (x: 1, y: 0, z: 0), perspective: 0.45)
-        .scaleEffect(1 + sin(0.17 * clock) * 0.035)
+        .rotation3DEffect(.degrees(sin(0.35 * clock) * 16 * sway), axis: (x: 0, y: 1, z: 0), perspective: 0.45)
+        .rotation3DEffect(.degrees(sin(0.22 * clock) * 7 * sway), axis: (x: 1, y: 0, z: 0), perspective: 0.45)
+        .scaleEffect(1 + sin(0.17 * clock) * 0.035 * sway)
         .position(x: size.width / 2, y: size.height / 2)
     }
 
@@ -176,13 +189,26 @@ struct WallWord: View {
     let colors: LyricColors
     let font: LyricFont
     let indent: CGFloat
+    var withIcon = false
 
     var body: some View {
         let seed = stableSeed(id)
-        let banded = seeded(seed, 3) < 0.2
         let tilt = (seeded(seed, 1) * 2 - 1) * 4.5
+        let symbol = withIcon ? WordIcons.shared.symbol(for: text) : nil
+        let iconFirst = seeded(seed, 4) < 0.5  // which side of the word the icon sits
 
-        Text(text.lowercased())
+        HStack(spacing: fontSize * 0.18) {
+            if let symbol, iconFirst { WordIconView(symbol: symbol, size: fontSize * 0.8, color: colors.highlight) }
+            label(seed: seed)
+            if let symbol, !iconFirst { WordIconView(symbol: symbol, size: fontSize * 0.8, color: colors.highlight) }
+        }
+        .rotationEffect(.degrees(tilt))
+        .padding(.leading, indent * seeded(seed, 2))
+    }
+
+    private func label(seed: Int) -> some View {
+        let banded = seeded(seed, 3) < 0.2
+        return Text(text.lowercased())
             .font(font.font(size: fontSize))
             .foregroundStyle(banded ? readableOn(colors.highlight) : (newest ? colors.text : colors.secondary))
             .padding(.horizontal, banded ? fontSize * 0.14 : 0)
@@ -190,8 +216,6 @@ struct WallWord: View {
             .background(banded ? colors.highlight : .clear)
             .opacity(newest ? 1 : 0.7)
             .shadow(color: .black.opacity(0.55), radius: 4)
-            .rotationEffect(.degrees(tilt))
-            .padding(.leading, indent * seeded(seed, 2))
     }
 }
 
@@ -209,4 +233,112 @@ func readableOn(_ color: Color) -> Color {
     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return .white }
     let brightness = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
     return brightness > 0.6 ? .black : .white
+}
+
+// MARK: - Fisheye
+
+/// Fisheye: the word being sung sits big in the middle of a convex lens, the previous word above
+/// and the next one below, smaller and squeezed toward the rim. Fisheye Visual adds icons.
+///
+/// Studied from Verci's decompiled Fisheye branch, written fresh here. Verci bends the pixels with a
+/// Metal shader (k = 1 + 0.45 r^2.2). Lilt applies the same curve per row instead: each row shrinks
+/// and moves toward the centre by 1/k at its distance from the middle.
+// ponytail: per-row lens, not per-pixel; a Metal distortionEffect would also curve each letter.
+struct FisheyeView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var player: PlayerMonitor
+    let withIcons: Bool
+    var settings = StyleSettings()
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            FisheyeScene(lines: model.lyrics?.lines ?? [],
+                         songTime: settings.songTime(player: player, model: model, at: timeline.date),
+                         colors: settings.colors(palette: model.palette), font: settings.font, withIcons: withIcons)
+        }
+        .background(Color.black)
+        .ignoresSafeArea()
+    }
+}
+
+struct FisheyeScene: View {
+    let lines: [LyricLine]
+    let songTime: Double
+    let colors: LyricColors
+    let font: LyricFont
+    var withIcons = false
+
+    struct Row {
+        var word: Word
+        var id: String
+        var role: Int  // -1 previous, 0 current, 1 next
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            let lensHeight = size.height * 0.56
+            let rows = visibleRows()
+            ZStack {
+                ForEach(rows, id: \.id) { row in
+                    rowView(row, lensHeight: lensHeight, width: size.width)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.28, dampingFraction: 0.72), value: rows.map(\.id))
+            .frame(width: size.width, height: lensHeight)
+            .position(x: size.width / 2, y: size.height / 2)
+        }
+    }
+
+    /// Previous, current and next word of the line being sung.
+    private func visibleRows() -> [Row] {
+        var lineIndex: Int? = nil
+        for (index, line) in lines.enumerated() where (line.words.first?.start ?? line.start) <= songTime {
+            lineIndex = index
+        }
+        guard let lineIndex else { return [] }
+        let words = lines[lineIndex].words
+        guard let last = words.last, songTime <= last.end + 0.8 else { return [] }
+        var current = 0
+        for (k, word) in words.enumerated() where word.start <= songTime { current = k }
+
+        var rows: [Row] = []
+        for offset in -1...1 {
+            let k = current + offset
+            if k >= 0 && k < words.count {
+                rows.append(Row(word: words[k], id: "\(lineIndex)-\(k)", role: offset))
+            }
+        }
+        return rows
+    }
+
+    private func rowView(_ row: Row, lensHeight: CGFloat, width: CGFloat) -> some View {
+        // Current word full size; neighbours at 58% and 68% opacity, like a magnifier's rim.
+        let scale: CGFloat = row.role == 0 ? 1 : 0.58
+        let opacity: Double = row.role == 0 ? 1 : 0.68
+        var fontSize = lensHeight * 0.42 * 0.42 * scale
+        let measured = (row.word.text.lowercased() as NSString)
+            .size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .semibold)]).width
+        if measured > width * 0.8 { fontSize *= width * 0.8 / measured }
+
+        // The lens: r is how far the row sits from the middle (0 centre, 1 rim); k = 1 + 0.45 r^2.2.
+        let offset = CGFloat(row.role) * lensHeight * 0.36
+        let r = abs(offset) / (lensHeight / 2)
+        let k = 1 + 0.45 * pow(r, 2.2)
+        let symbol = withIcons ? WordIcons.shared.symbol(for: row.word.text) : nil
+        let iconFirst = seeded(stableSeed(row.id), 4) < 0.5
+
+        return HStack(spacing: fontSize * 0.18) {
+            if let symbol, iconFirst { WordIconView(symbol: symbol, size: fontSize * 0.8, color: colors.highlight) }
+            Text(row.word.text.lowercased())
+                .font(font.font(size: fontSize))
+                .foregroundStyle(row.role == 0 ? colors.text : colors.secondary)
+            if let symbol, !iconFirst { WordIconView(symbol: symbol, size: fontSize * 0.8, color: colors.highlight) }
+        }
+        .opacity(opacity)
+        .shadow(color: .black.opacity(0.55), radius: 4)
+        .scaleEffect(x: 1 / k, y: 1 / (k * k))  // squeezed harder vertically, like glass at the edge
+        .offset(y: offset / k)
+    }
 }

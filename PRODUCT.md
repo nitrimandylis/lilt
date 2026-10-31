@@ -19,8 +19,8 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 - **Constellation** (v1, the only one): words land on a golden-angle spiral around a
   seeded anchor, each as a four-point star with a link traced from the previous one.
-  A star grows over its word's sung length (ease-out cubic) and gets a damped kick in
-  size and tilt when it lands; the whole scene shakes slightly with it. The current
+  A star blooms over its word's sung length (at least 0.45 s, ease-out cubic) and
+  settles with one soft 10% swing; text fades in over 0.5 s while drifting up. The current
   word is large, in the text colour, with a ring pulsing in the highlight colour;
   sung words shrink to secondary at 55%. No background or glow: 26 faint dust motes
   and one soft drop shadow over the wallpaper. Text is lowercase semibold.
@@ -28,8 +28,10 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Settings (menu bar)
 
-- Colors: lyric text, highlight, secondary text (default white, white, white 70%),
-  Auto Sync (highlight from the album's artwork colour), Reset.
+- Colors: Auto Sync (on by default) builds all three colours from Apple's artwork
+  palette, fetched from the catalog through Cider: the most colourful swatch is the
+  highlight, paler versions of it are the text and sung-word colours. With it off:
+  lyric text, highlight, secondary text pickers (default white, white, white 70%), Reset.
 - Font: SF Pro, SF Rounded, New York, Helvetica Neue.
 - Open lyrics window (a normal resizable black window for when the Mac is unlocked).
 - Lyrics delay slider (-0.5 to +1.0 s); Bluetooth output adds +0.2 s automatically.

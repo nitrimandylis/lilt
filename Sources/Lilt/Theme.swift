@@ -26,6 +26,48 @@ enum LyricFont: String, CaseIterable, Identifiable {
     }
 }
 
+/// Lyric colours made from an album's palette, tuned to read on a black stage.
+/// The most colourful swatch becomes the highlight; the text colours are paler versions of it,
+/// so a pink album gives pale pink words, a magenta highlight and a muted pink for sung words.
+struct AlbumPalette {
+    let text: Color
+    let highlight: Color
+    let secondary: Color
+
+    /// `hexes` are "rrggbb" strings (Apple gives bgColor and textColor1...4). Nil when empty.
+    init?(hexes: [String]) {
+        var best: NSColor? = nil
+        var bestVividness: CGFloat = -1
+        for hex in hexes {
+            guard let color = nsColorFromHex(hex) else { continue }
+            let vividness = color.saturationComponent * color.brightnessComponent
+            if vividness > bestVividness {
+                best = color
+                bestVividness = vividness
+            }
+        }
+        guard let best else { return nil }
+
+        // Bright enough to glow on black, not so saturated it buzzes.
+        let vivid = NSColor(hue: best.hueComponent,
+                            saturation: min(best.saturationComponent, 0.85),
+                            brightness: max(best.brightnessComponent, 0.8),
+                            alpha: 1)
+        highlight = Color(nsColor: vivid)
+        text = Color(nsColor: vivid.blended(withFraction: 0.65, of: .white) ?? .white)
+        secondary = Color(nsColor: (vivid.blended(withFraction: 0.4, of: .white) ?? .white).withAlphaComponent(0.7))
+    }
+}
+
+/// "rrggbb" to an sRGB NSColor with hue/saturation/brightness available.
+func nsColorFromHex(_ hex: String) -> NSColor? {
+    guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
+    return NSColor(srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+                   green: CGFloat((value >> 8) & 0xff) / 255,
+                   blue: CGFloat(value & 0xff) / 255,
+                   alpha: 1)
+}
+
 /// "#RRGGBBAA" or "#RRGGBB" to a Color; white if the string is malformed.
 func colorFromHex(_ hex: String) -> Color {
     var digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex

@@ -22,19 +22,43 @@ struct Lyrics {
 final class LyricsStore {
     private let cider: CiderClient
     private var cache: [String: Lyrics] = [:]
+    private var catalogIds: [String: String] = [:]  // "title|artist" -> catalog id
     private var storefront: String?
 
     init(cider: CiderClient) {
         self.cider = cider
     }
 
+    /// The track's Apple Music catalog id: from the player if it gave one, otherwise a search.
+    private func catalogId(for track: Track, storefront: String) async -> String? {
+        if let id = track.catalogId { return id }
+        let key = track.title + "|" + track.artist
+        if let known = catalogIds[key] { return known }
+        let found = await searchCatalogId(title: track.title, artist: track.artist, storefront: storefront)
+        catalogIds[key] = found
+        return found
+    }
+
+    /// Apple's colours for the album art: background first, then four text colours, as "rrggbb".
+    func artworkColors(for track: Track) async -> [String] {
+        let store = await storefrontId()
+        guard let id = await catalogId(for: track, storefront: store),
+              let json = await cider.amapi("/v1/catalog/\(store)/songs/\(id)")
+        else { return [] }
+        let apple = json["data"] as? [String: Any]
+        let song = (apple?["data"] as? [[String: Any]])?.first
+        let attributes = song?["attributes"] as? [String: Any]
+        let artwork = attributes?["artwork"] as? [String: Any]
+        var colors: [String] = []
+        for key in ["bgColor", "textColor1", "textColor2", "textColor3", "textColor4"] {
+            if let hex = artwork?[key] as? String { colors.append(hex) }
+        }
+        return colors
+    }
+
     func lyrics(for track: Track) async -> Lyrics? {
         let store = await storefrontId()
-        var id = track.catalogId
-        if id == nil {
-            id = await searchCatalogId(title: track.title, artist: track.artist, storefront: store)
-        }
-        guard let id else { return nil }
+        guard let id = await catalogId(for: track, storefront: store) else { return nil }
         if let cached = cache[id] { return cached }
 
         // syllable-lyrics has a time for every word; plain lyrics only has a time per line.

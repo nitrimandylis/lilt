@@ -14,7 +14,7 @@ struct ConstellationView: View {
     @AppStorage("textColor") private var textHex = Theme.defaultText
     @AppStorage("highlightColor") private var highlightHex = Theme.defaultHighlight
     @AppStorage("secondaryColor") private var secondaryHex = Theme.defaultSecondary
-    @AppStorage("autoSyncColors") private var autoSync = false
+    @AppStorage("autoSyncColors") private var autoSync = true
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
     @AppStorage("lyricsDelay") private var delay = 0.0
 
@@ -29,18 +29,23 @@ struct ConstellationView: View {
     }
 
     private func makePainter(at date: Date) -> ConstellationPainter {
+        var text = colorFromHex(textHex)
         var highlight = colorFromHex(highlightHex)
-        if autoSync, let album = player.track?.accentHex {
-            highlight = albumAccent(hex: album)  // Auto Sync: the record picks the highlight
+        var secondary = colorFromHex(secondaryHex)
+        if autoSync, let palette = model.palette {
+            // Auto Sync: the album art picks all three colours.
+            text = palette.text
+            highlight = palette.highlight
+            secondary = palette.secondary
         }
         return ConstellationPainter(
             lines: model.lyrics?.lines ?? [],
             // Positive delay holds the lyrics back to match what you actually hear.
             songTime: player.position(at: date) - delay - model.outputDelay,
             clock: date.timeIntervalSinceReferenceDate,
-            textColor: colorFromHex(textHex),
+            textColor: text,
             highlight: highlight,
-            secondary: colorFromHex(secondaryHex),
+            secondary: secondary,
             font: LyricFont(rawValue: fontChoice) ?? .sfPro
         )
     }
@@ -56,7 +61,9 @@ struct ConstellationPainter {
     let secondary: Color
     let font: LyricFont
 
-    let minimumWordLength = 0.08  // seconds; stops tiny words from popping in a single frame
+    let minimumWordLength = 0.08  // seconds; floor for word length when judging held notes
+    let revealMinimum = 0.45      // seconds; even the quickest word takes this long to bloom
+    let kickAmount = 0.1          // how far a landing word overshoots in size (10%)
     let activeTail = 0.2          // a word stays "current" this long after it ends
     let fadeSeconds = 1.2         // how long a finished line takes to fade
 
@@ -68,14 +75,6 @@ struct ConstellationPainter {
         drawDust(scene, size: size)
 
         guard let current = currentLineIndex() else { return }
-
-        // The newest word to land shakes the whole scene a little in its own direction.
-        if let landed = lines[current].words.last(where: { $0.start <= songTime }) {
-            let seed = Int(landed.start * 1000)
-            let angle = seeded(seed, 11) * 2 * Double.pi
-            let shake = 0.014 * 0.6 * size.width * kick(landed)
-            scene.translateBy(x: cos(angle) * shake, y: sin(angle) * shake)
-        }
 
         if current > 0 {
             // The previous line fades out and drifts up as the new one starts.
@@ -114,18 +113,18 @@ struct ConstellationPainter {
         return max(word.end - word.start, minimumWordLength)
     }
 
-    /// 0 before the word starts, easing out to 1 by the time it ends.
+    /// 0 before the word starts, easing out to 1 over the word's length (at least `revealMinimum`).
     private func reveal(_ word: Word) -> Double {
-        let linear = clamp((songTime - word.start) / length(word))
+        let linear = clamp((songTime - word.start) / max(length(word), revealMinimum))
         return 1 - pow(1 - linear, 3)  // ease-out cubic: fast start, gentle finish
     }
 
-    /// A spring that fires when the word lands: starts at -1, swings, and dies out.
-    /// exp(-t / 0.16) is the decay, cos(15t + pi) the wobble.
+    /// A soft spring when the word lands: starts at -1, one slow swing, settles in about a second.
+    /// exp(-t / 0.3) is the decay, cos(8t + pi) the swing.
     private func kick(_ word: Word) -> Double {
         let t = songTime - word.start
         if t < 0 { return 0 }
-        return exp(-t / 0.16) * cos(15 * t + .pi)
+        return exp(-t / 0.3) * cos(8 * t + .pi)
     }
 
     private func isCurrent(_ word: Word) -> Bool {
@@ -225,7 +224,7 @@ struct ConstellationPainter {
 
             // Star size: grows in, overshoots with the kick, twinkles 8% at 1.4 Hz.
             let twinkle = 1 + 0.08 * sin(2 * Double.pi * 1.4 * clock + seeded(Int(item.word.start * 1000), 7) * 6.28)
-            var radius = progress * (1 + 0.35 * spring) * (current ? 13.5 : 9) * twinkle
+            var radius = progress * (1 + kickAmount * spring) * (current ? 13.5 : 9) * twinkle
             if long { radius *= 1.8 }
 
             var starLayer = layer
@@ -241,20 +240,19 @@ struct ConstellationPainter {
                 layer.stroke(Path(ellipseIn: ring), with: .color(highlight.opacity((1 - phase) * 0.8)), lineWidth: 2)
             }
 
-            // Text appears once the star is 60% grown, fades in over 0.1 s,
-            // tilts with the kick and starts 30% oversized.
-            guard progress > 0.6 else { continue }
+            // Text fades in over 0.5 s while drifting up into place, with a slight tilt from the kick.
             var fontSize = baseFont * (current ? 1.8 : 1)
             if long { fontSize *= 2.4 / 1.8 }  // ponytail: tamed from Verci's x2.4 so long words fit our layout boxes
             let color = current ? textColor : secondary
             let text = context.resolve(Text(item.word.text.lowercased()).font(font.font(size: fontSize)).foregroundStyle(color))
 
-            let fadeIn = min(age / 0.1, 1)
-            let scale = 1 + 0.3 * exp(-age / 0.1)
+            let fadeIn = smoothstep(age / 0.5)
+            let scale = 1 + 0.06 * exp(-age / 0.3)
             var textLayer = layer
             textLayer.opacity = fade * fadeIn * (current ? 1 : 0.55)
-            textLayer.translateBy(x: item.center.x, y: item.center.y + 0.9 * radius + 0.55 * fontSize)
-            textLayer.rotate(by: .degrees(8 * spring))
+            let settle = (1 - fadeIn) * 10  // starts 10 pt low
+            textLayer.translateBy(x: item.center.x, y: item.center.y + 0.9 * radius + 0.55 * fontSize + settle)
+            textLayer.rotate(by: .degrees(3 * spring))
             textLayer.scaleBy(x: scale, y: scale)
             textLayer.draw(text, at: .zero, anchor: .center)
         }
@@ -281,6 +279,12 @@ func clamp(_ value: Double) -> Double {
     return min(max(value, 0), 1)
 }
 
+/// Eases 0...1 in and out (slow, fast, slow), clamping outside that range.
+func smoothstep(_ value: Double) -> Double {
+    let x = clamp(value)
+    return x * x * (3 - 2 * x)
+}
+
 /// A repeatable 0..<1 number for a pair of integers, so a line keeps the same shape every frame.
 func seeded(_ a: Int, _ b: Int) -> Double {
     var x = UInt64(bitPattern: Int64(a &* 92821 &+ b &* 68917 &+ 1))
@@ -290,22 +294,4 @@ func seeded(_ a: Int, _ b: Int) -> Double {
     x = x &* 0xc4ceb9fe1a85ec53
     x ^= x >> 33
     return Double(x % 1_000_000) / 1_000_000
-}
-
-/// Album colour from Cider ("fa233b"), lifted toward white when it is too dark to read on a lock screen.
-func albumAccent(hex: String?) -> Color {
-    guard let hex, hex.count == 6, let value = Int(hex, radix: 16) else {
-        return .white
-    }
-    var red = Double((value >> 16) & 0xff) / 255
-    var green = Double((value >> 8) & 0xff) / 255
-    var blue = Double(value & 0xff) / 255
-    let brightness = 0.299 * red + 0.587 * green + 0.114 * blue
-    if brightness < 0.55 {
-        let lift = 0.55 - brightness + 0.15
-        red += (1 - red) * lift
-        green += (1 - green) * lift
-        blue += (1 - blue) * lift
-    }
-    return Color(red: red, green: green, blue: blue)
 }

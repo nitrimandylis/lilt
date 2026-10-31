@@ -37,6 +37,7 @@ final class AppModel: ObservableObject {
     private var subscriptions = Set<AnyCancellable>()
 
     @Published var lyrics: Lyrics?
+    @Published var palette: AlbumPalette?  // colours pulled from the album art, for Auto Sync
     @Published var status = "Waiting for music"
     @Published var isLocked = false
     /// Extra delay for the current audio output; Bluetooth headphones play ~0.2 s late.
@@ -73,6 +74,7 @@ final class AppModel: ObservableObject {
 
     private func trackChanged(_ track: Track?) {
         lyrics = nil
+        palette = nil
         outputDelay = outputIsBluetooth() ? 0.2 : 0  // headphones can change between songs
         refresh()
         guard let track else {
@@ -81,8 +83,10 @@ final class AppModel: ObservableObject {
         }
         status = "Looking up lyrics…"
         Task {
+            let colors = await store.artworkColors(for: track)
             let found = await store.lyrics(for: track)
             guard player.track == track else { return }  // the song changed while we waited
+            palette = AlbumPalette(hexes: colors)
             lyrics = found
             if let found {
                 status = found.wordTimed ? "Word-timed lyrics" : "Line-timed lyrics, word times estimated"
@@ -213,7 +217,7 @@ struct MenuView: View {
     @AppStorage("textColor") private var textHex = Theme.defaultText
     @AppStorage("highlightColor") private var highlightHex = Theme.defaultHighlight
     @AppStorage("secondaryColor") private var secondaryHex = Theme.defaultSecondary
-    @AppStorage("autoSyncColors") private var autoSync = false
+    @AppStorage("autoSyncColors") private var autoSync = true
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
     @AppStorage("lyricsDelay") private var delay = 0.0
 
@@ -230,9 +234,10 @@ struct MenuView: View {
             Divider()
             Text("Color").font(.caption).foregroundStyle(.secondary)
             Toggle("Auto Sync from album", isOn: $autoSync)
-            ColorPicker("Lyric text", selection: hexBinding($textHex))
+            // With Auto Sync on, the album art decides; the pickers come back when it is off.
+            ColorPicker("Lyric text", selection: hexBinding($textHex)).disabled(autoSync)
             ColorPicker("Highlight", selection: hexBinding($highlightHex)).disabled(autoSync)
-            ColorPicker("Secondary text", selection: hexBinding($secondaryHex))
+            ColorPicker("Secondary text", selection: hexBinding($secondaryHex)).disabled(autoSync)
             Button("Reset colors") {
                 textHex = Theme.defaultText
                 highlightHex = Theme.defaultHighlight

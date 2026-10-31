@@ -11,7 +11,6 @@ struct Track: Equatable {
     var artist: String
     var album: String
     var catalogId: String?  // Apple Music catalog id, when the player hands one over
-    var accentHex: String?  // album colour from Cider's artwork metadata, e.g. "1a2b3c"
     var source: PlayerSource
 }
 
@@ -79,14 +78,11 @@ struct CiderClient {
         } else if let id = playParams?["id"] as? String, id.allSatisfy({ $0.isNumber }) {
             catalogId = id  // library ids start with "i.", catalog ids are all digits
         }
-        let artwork = info["artwork"] as? [String: Any]
-
         let track = Track(
             title: title,
             artist: info["artistName"] as? String ?? "",
             album: info["albumName"] as? String ?? "",
             catalogId: catalogId,
-            accentHex: artwork?["bgColor"] as? String,
             source: .cider
         )
         return PlaybackState(
@@ -119,7 +115,7 @@ enum MusicApp {
         // AppleScript formats the position with the system locale, so "12,5" can happen.
         let position = Double(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
         let track = Track(title: parts[0], artist: parts[1], album: parts[2],
-                          catalogId: nil, accentHex: nil, source: .music)
+                          catalogId: nil, source: .music)
         return PlaybackState(track: track, position: position, isPlaying: parts[4] == "playing")
     }
 }

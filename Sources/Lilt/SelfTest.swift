@@ -22,6 +22,9 @@ func runSelfTest() {
 
     precondition(unescapeHTML("&lt;p&gt;Rock &amp;amp; Roll&lt;/p&gt;") == "<p>Rock &amp; Roll</p>", "unescape once")
     precondition(hexFromColor(colorFromHex("#FF336680")) == "#FF336680", "hex colour round trip")
+    // A muted navy album with one teal swatch: teal wins the highlight.
+    let palette = AlbumPalette(hexes: ["09161d", "d2d0c0", "2aa198"])
+    precondition(palette != nil && AlbumPalette(hexes: []) == nil, "palette from swatches, nil from none")
     precondition(parseTime("00:00:10.050") == 10.05 && parseTime("12.3s") == 12.3, "time formats")
 
     print("selftest ok")

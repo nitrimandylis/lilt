@@ -36,7 +36,8 @@ func runSelfTest() {
 /// `Lilt --preview out.png [seconds] [width] [height]`: draws one frame of the constellation
 /// with sample lyrics, no music needed.
 @MainActor
-func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 1512, height: CGFloat = 982) {
+func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 1512, height: CGFloat = 982,
+                   style: LyricStyle = .constellation) {
     let sample = [
         "we drew the stars ourselves out of nothing",
         "and named them after everyone we never got to meet",
@@ -55,7 +56,16 @@ func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 
                                        highlight: colorFromHex(Theme.defaultHighlight),
                                        secondary: colorFromHex(Theme.defaultSecondary),
                                        font: .sfPro, layouts: LayoutCache())
-    let frame = Canvas { context, size in painter.draw(context, size: size) }
+    let colors = LyricColors(text: colorFromHex(Theme.defaultText), highlight: Color(red: 0.85, green: 0.3, blue: 0.5),
+                             secondary: colorFromHex(Theme.defaultSecondary))
+    let scene: AnyView
+    switch style {
+    case .constellation:
+        scene = AnyView(Canvas { context, size in painter.draw(context, size: size) })
+    case .ship:
+        scene = AnyView(WallScene(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro))
+    }
+    let frame = scene
         .frame(width: width, height: height)
         .background(Color.black)
     let renderer = ImageRenderer(content: frame)

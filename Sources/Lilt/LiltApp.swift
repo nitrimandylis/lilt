@@ -18,7 +18,8 @@ struct LiltApp: App {
             let time = flag + 2 < args.count ? Double(args[flag + 2]) ?? 5.5 : 5.5
             let width = flag + 3 < args.count ? Double(args[flag + 3]) ?? 1512 : 1512
             let height = flag + 4 < args.count ? Double(args[flag + 4]) ?? 982 : 982
-            MainActor.assumeIsolated { renderPreview(to: args[flag + 1], at: time, width: width, height: height) }
+            let style = flag + 5 < args.count ? LyricStyle(rawValue: args[flag + 5]) ?? .constellation : .constellation
+            MainActor.assumeIsolated { renderPreview(to: args[flag + 1], at: time, width: width, height: height, style: style) }
             exit(0)
         }
     }
@@ -112,14 +113,14 @@ final class AppModel: ObservableObject {
     }
 
     func openLyricsWindow() {
-        lyricsWindow.open(AnyView(ConstellationView(model: self, player: player)))
+        lyricsWindow.open(AnyView(LyricsView(model: self, player: player)))
     }
 
     /// Shows the lock screen overlay only while lyrics exist, music plays, and the Mac is locked.
     private func refresh() {
         let show = lyrics != nil && player.isPlaying && isLocked
         if show {
-            overlay.show(AnyView(ConstellationView(model: self, player: player)))
+            overlay.show(AnyView(LyricsView(model: self, player: player)))
         } else {
             overlay.hide()
         }
@@ -234,6 +235,7 @@ struct MenuView: View {
     @AppStorage("autoSyncColors") private var autoSync = true
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
     @AppStorage("lyricsDelay") private var delay = 0.0
+    @AppStorage("lyricStyle") private var styleChoice = LyricStyle.constellation.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -244,6 +246,13 @@ struct MenuView: View {
                 Text("Nothing playing").font(.headline)
             }
             Text(model.status).font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+            Picker("Style", selection: $styleChoice) {
+                ForEach(LyricStyle.allCases) { style in
+                    Text(style.rawValue).tag(style.rawValue)
+                }
+            }
 
             Divider()
             Text("Color").font(.caption).foregroundStyle(.secondary)

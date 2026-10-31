@@ -219,38 +219,55 @@ struct ConstellationPainter {
             if k > 0 { obstacles.links.append((previous[k - 1].center, item.center)) }
         }
 
-        // Start far from where the previous line sat.
-        var away = CGPoint(x: size.width / 2, y: size.height / 2)
-        if !previous.isEmpty {
-            away.x = previous.reduce(0) { $0 + $1.center.x } / CGFloat(previous.count)
-            away.y = previous.reduce(0) { $0 + $1.center.y } / CGFloat(previous.count)
+        // Aim the line through the middle of the screen: pick a mostly sideways direction,
+        // estimate how long the path will be, and start half that length back from the centre.
+        // The previous line is an obstacle, so the two still never collide.
+        let leftward = seeded(index, 3) < 0.5
+        let baseHeading = (leftward ? Double.pi : 0) + (seeded(index, 5) - 0.5) * 0.8
+        var heading = baseHeading
+        var pathLength: CGFloat = 0
+        for k in words.indices.dropFirst() {
+            pathLength += max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base
         }
-        var bestStart: (CGPoint, CGRect, LabelSide)? = nil
-        var bestDistance: CGFloat = -1
-        for attempt in 0..<40 {
-            let point = CGPoint(x: margin.minX + margin.width * seeded(index, 20 + attempt),
-                                y: margin.minY + margin.height * seeded(index, 80 + attempt))
+        pathLength *= 0.7  // the path bends, so it spans less than its full length
+        // Alternate just above and just below the middle, so back-to-back lines sit in
+        // neighbouring bands instead of fighting over the same spot.
+        let band: CGFloat = index % 2 == 0 ? -0.16 : 0.16
+        let center = CGPoint(x: size.width / 2, y: size.height * (0.5 + band))
+
+        var start: (CGPoint, CGRect, LabelSide)? = nil
+        for attempt in 0..<40 where start == nil {
+            // Nudge further from the ideal spot as attempts fail.
+            let wobble = 0.04 + 0.01 * CGFloat(attempt)
+            var point = CGPoint(x: center.x - cos(heading) * pathLength / 2,
+                                y: center.y - sin(heading) * pathLength / 2 * 0.8)
+            point.x += (seeded(index, 20 + attempt) - 0.5) * 2 * wobble * size.width
+            point.y += (seeded(index, 80 + attempt) - 0.5) * 2 * wobble * size.height
+            point.x = min(max(point.x, margin.minX), margin.maxX)
+            point.y = min(max(point.y, margin.minY), margin.maxY)
             guard starIsFree(point, obstacles),
                   let (label, side) = freeLabel(for: point, text: textSizes[0], gap: gap(words[0], index), obstacles, size)
             else { continue }
-            let distance = previous.isEmpty ? 1 : hypot(point.x - away.x, point.y - away.y)
-            if distance > bestDistance {
-                bestStart = (point, label, side)
-                bestDistance = distance
-            }
-            if distance >= size.width * 0.3 { break }  // far enough; taking it keeps placement varied
+            start = (point, label, side)
         }
-        let start = bestStart ?? (CGPoint(x: margin.midX, y: margin.midY),
-                                  labelArea(CGPoint(x: margin.midX, y: margin.midY), textSizes[0], side: .below, gap: 22), .below)
+        let fallback = CGPoint(x: margin.midX, y: margin.midY)
+        let first = start ?? (fallback, labelArea(fallback, textSizes[0], side: .below, gap: 22), .below)
 
-        var placed = [PlacedWord(word: words[0], center: start.0, label: start.1, side: start.2)]
-        obstacles.stars.append(start.0)
-        obstacles.labels.append(start.1)
+        var placed = [PlacedWord(word: words[0], center: first.0, label: first.1, side: first.2)]
+        obstacles.stars.append(first.0)
+        obstacles.labels.append(first.1)
 
-        // Head away from the previous line, give or take 45 degrees.
-        var heading = atan2(start.0.y - away.y, start.0.x - away.x) + (seeded(index, 5) - 0.5) * 1.6
+        let previousCount = (stars: previous.count, labels: previous.count, links: max(previous.count - 1, 0))
+        var previousCleared = false
 
         for k in words.indices.dropFirst() {
+            // The previous line is gone once it has faded, so later words may use its space.
+            if !previousCleared && words[k].start >= lines[index].start + fadeSeconds {
+                obstacles.stars.removeFirst(previousCount.stars)
+                obstacles.labels.removeFirst(previousCount.labels)
+                obstacles.links.removeFirst(previousCount.links)
+                previousCleared = true
+            }
             let from = placed[k - 1].center
             let step = max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base * 2 * seeded(index * 100 + k, 1)
             var found: PlacedWord? = nil
@@ -258,7 +275,7 @@ struct ConstellationPainter {
             // Search around the heading, widening the angle and reaching further as tries fail.
             for attempt in 0..<160 where found == nil {
                 let ring = Double(attempt / 16)  // 0 to 9: each ring reaches 25% further
-                let spread = 1.4 + Double(attempt % 16) * 0.3  // up to a full circle
+                let spread = 0.9 + Double(attempt % 16) * 0.35  // up to a full circle
                 let angle = heading + (seeded(index * 100 + k, 10 + attempt) - 0.5) * spread
                 let distance = step * (1 + 0.25 * ring)
                 let point = CGPoint(x: from.x + cos(angle) * distance, y: from.y + sin(angle) * distance * 0.8)
@@ -281,18 +298,23 @@ struct ConstellationPainter {
                 placed[k - 1].side = previousSide
                 obstacles.labels[obstacles.labels.count - 1] = previousLabel
                 found = PlacedWord(word: words[k], center: point, label: label, side: side)
-                heading = angle  // keep walking roughly the same way, so the line reads as a path
+                // Follow the bend a little, but lean back toward the line's direction so it
+                // stays in its band instead of wandering off.
+                heading = 0.5 * angle + 0.5 * baseHeading
             }
 
             // ponytail: a crowded screen can leave no clean spot; the word then takes any free one, link rules relaxed.
             if found == nil {
-                for attempt in 0..<60 where found == nil {
+                var nearest = CGFloat.infinity
+                for attempt in 0..<80 {
                     let point = CGPoint(x: margin.minX + margin.width * seeded(index * 100 + k, 200 + attempt),
                                         y: margin.minY + margin.height * seeded(index * 100 + k, 300 + attempt))
-                    guard starIsFree(point, obstacles),
+                    let distance = hypot(point.x - from.x, point.y - from.y)
+                    guard distance < nearest, starIsFree(point, obstacles),
                           let (label, side) = freeLabel(for: point, text: textSizes[k], gap: gap(words[k], index), obstacles, size)
                     else { continue }
-                    found = PlacedWord(word: words[k], center: point, label: label, side: side)
+                    found = PlacedWord(word: words[k], center: point, label: label, side: side)  // the closest free spot wins
+                    nearest = distance
                 }
             }
             let point = found?.center ?? from

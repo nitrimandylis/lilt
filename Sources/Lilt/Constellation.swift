@@ -219,28 +219,32 @@ struct ConstellationPainter {
             if k > 0 { obstacles.links.append((previous[k - 1].center, item.center)) }
         }
 
-        // Aim the line through the middle of the screen: pick a mostly sideways direction,
-        // estimate how long the path will be, and start half that length back from the centre.
-        // The previous line is an obstacle, so the two still never collide.
-        let leftward = seeded(index, 3) < 0.5
-        let baseHeading = (leftward ? Double.pi : 0) + (seeded(index, 5) - 0.5) * 0.8
-        var heading = baseHeading
-        var pathLength: CGFloat = 0
+        // Give the line a shape, trace it once with no obstacles, then start it wherever puts
+        // the traced shape's centre in the middle of its band. The walk below follows the plan
+        // and only bends away from it to dodge something.
+        var steps: [CGFloat] = [0]
         for k in words.indices.dropFirst() {
-            pathLength += max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base
+            steps.append(max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base * 2 * seeded(index * 100 + k, 1))
         }
-        pathLength *= 0.7  // the path bends, so it spans less than its full length
+        let planned = plannedHeadings(index, count: words.count)
+        var traced = [CGPoint.zero]
+        for k in words.indices.dropFirst() {
+            let last = traced[k - 1]
+            traced.append(CGPoint(x: last.x + cos(planned[k]) * steps[k], y: last.y + sin(planned[k]) * steps[k] * 0.8))
+        }
+        let tracedMid = CGPoint(x: (traced.map(\.x).min()! + traced.map(\.x).max()!) / 2,
+                                y: (traced.map(\.y).min()! + traced.map(\.y).max()!) / 2)
+
         // Alternate just above and just below the middle, so back-to-back lines sit in
         // neighbouring bands instead of fighting over the same spot.
-        let band: CGFloat = index % 2 == 0 ? -0.16 : 0.16
-        let center = CGPoint(x: size.width / 2, y: size.height * (0.5 + band))
+        let band: CGFloat = index % 2 == 0 ? -0.14 : 0.14
+        let center = CGPoint(x: size.width / 2 - tracedMid.x, y: size.height * (0.5 + band) - tracedMid.y)
 
         var start: (CGPoint, CGRect, LabelSide)? = nil
         for attempt in 0..<40 where start == nil {
             // Nudge further from the ideal spot as attempts fail.
             let wobble = 0.04 + 0.01 * CGFloat(attempt)
-            var point = CGPoint(x: center.x - cos(heading) * pathLength / 2,
-                                y: center.y - sin(heading) * pathLength / 2 * 0.8)
+            var point = center  // where the first word sits if the traced shape is centred
             point.x += (seeded(index, 20 + attempt) - 0.5) * 2 * wobble * size.width
             point.y += (seeded(index, 80 + attempt) - 0.5) * 2 * wobble * size.height
             point.x = min(max(point.x, margin.minX), margin.maxX)
@@ -269,14 +273,14 @@ struct ConstellationPainter {
                 previousCleared = true
             }
             let from = placed[k - 1].center
-            let step = max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base * 2 * seeded(index * 100 + k, 1)
+            let step = steps[k]
             var found: PlacedWord? = nil
 
             // Search around the heading, widening the angle and reaching further as tries fail.
             for attempt in 0..<160 where found == nil {
                 let ring = Double(attempt / 16)  // 0 to 9: each ring reaches 25% further
                 let spread = 0.9 + Double(attempt % 16) * 0.35  // up to a full circle
-                let angle = heading + (seeded(index * 100 + k, 10 + attempt) - 0.5) * spread
+                let angle = planned[k] + (seeded(index * 100 + k, 10 + attempt) - 0.5) * spread
                 let distance = step * (1 + 0.25 * ring)
                 let point = CGPoint(x: from.x + cos(angle) * distance, y: from.y + sin(angle) * distance * 0.8)
 
@@ -298,9 +302,6 @@ struct ConstellationPainter {
                 placed[k - 1].side = previousSide
                 obstacles.labels[obstacles.labels.count - 1] = previousLabel
                 found = PlacedWord(word: words[k], center: point, label: label, side: side)
-                // Follow the bend a little, but lean back toward the line's direction so it
-                // stays in its band instead of wandering off.
-                heading = 0.5 * angle + 0.5 * baseHeading
             }
 
             // ponytail: a crowded screen can leave no clean spot; the word then takes any free one, link rules relaxed.
@@ -326,6 +327,37 @@ struct ConstellationPainter {
             placed.append(item)
         }
         return placed
+    }
+
+    /// The direction each step of a line wants to go (index 0 unused). Each line gets one of
+    /// four shapes, picked and tuned by its seed, so no two neighbouring lines look alike.
+    private func plannedHeadings(_ index: Int, count: Int) -> [Double] {
+        let base = (seeded(index, 3) < 0.5 ? Double.pi : 0) + (seeded(index, 5) - 0.5) * 0.6
+        let bendSign: Double = seeded(index, 6) < 0.5 ? -1 : 1
+        let steps = Double(max(count - 1, 1))
+        var headings = [base]
+        for k in 1..<max(count, 1) {
+            let step = Double(k)
+            var heading = base
+            switch Int(seeded(index, 7) * 4) {
+            case 0:
+                // Arc: turns a little every step, about 140 degrees over the whole line at most.
+                let turn = bendSign * min(0.5, 2.4 / steps)
+                heading = base - turn * steps / 2 + turn * step
+            case 1:
+                // Wave: swings either side of the line's direction.
+                heading = base + 0.85 * sin(step * 1.1 + seeded(index, 8) * 6.28)
+            case 2:
+                // Zigzag: alternates up and down.
+                heading = base + bendSign * (k % 2 == 0 ? 0.7 : -0.7)
+            default:
+                // Hook: straight, then curls in the second half.
+                let half = steps / 2
+                heading = step <= half ? base : base + bendSign * 0.6 * (step - half)
+            }
+            headings.append(heading)
+        }
+        return headings
     }
 
     /// How far a label sits from its star: past the star at its biggest, more for held notes.

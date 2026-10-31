@@ -17,9 +17,9 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Styles
 
-- **Constellation** (v1, the only one): each line grows as a mostly sideways path, word to
-  word, aimed through the middle of the screen; back-to-back lines alternate just above
-  and just below centre. The previous line's stars, links and labels are obstacles until
+- **Constellation** (v1, the only one): each line follows one of four seeded shapes (arc,
+  wave, zigzag, hook), traced once and placed so the shape's centre sits in the middle of
+  the screen; back-to-back lines alternate just above and just below centre. The previous line's stars, links and labels are obstacles until
   it has faded.
   A star is placed only where its link crosses nothing, passes through no label or star,
   and both it and the previous word still have a free side for their labels (star-chart

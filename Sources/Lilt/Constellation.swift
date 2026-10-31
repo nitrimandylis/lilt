@@ -17,6 +17,7 @@ struct ConstellationView: View {
     @AppStorage("autoSyncColors") private var autoSync = true
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
     @AppStorage("lyricsDelay") private var delay = 0.0
+    @State private var layouts = LayoutCache()
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -46,9 +47,28 @@ struct ConstellationView: View {
             textColor: text,
             highlight: highlight,
             secondary: secondary,
-            font: LyricFont(rawValue: fontChoice) ?? .sfPro
+            font: LyricFont(rawValue: fontChoice) ?? .sfPro,
+            layouts: layouts
         )
     }
+}
+
+enum LabelSide: CaseIterable {
+    case below, above, right, left
+}
+
+struct PlacedWord {
+    var word: Word
+    var center: CGPoint
+    var label: CGRect    // where the text goes, beside its star, at the biggest size it is drawn
+    var side: LabelSide
+}
+
+/// Remembers each line's layout, so a line keeps its shape from frame to frame and the next
+/// line can steer around it. Cleared whenever the lyrics, window size or font change.
+final class LayoutCache {
+    var key = ""
+    var lines: [Int: [PlacedWord]] = [:]
 }
 
 /// Holds one frame's worth of state and draws it. Plain struct, so nothing here touches UI state.
@@ -60,6 +80,7 @@ struct ConstellationPainter {
     let highlight: Color
     let secondary: Color
     let font: LyricFont
+    let layouts: LayoutCache
 
     let minimumWordLength = 0.08  // seconds; floor for word length when judging held notes
     let revealMinimum = 0.45      // seconds; even the quickest word takes this long to bloom
@@ -140,101 +161,195 @@ struct ConstellationPainter {
 
     // MARK: Layout
 
-    private enum LabelSide: CaseIterable {
-        case below, above, right, left
+    private let activeScale: CGFloat = 1.5  // the word being sung is drawn this much bigger
+    private let longScale: CGFloat = 1.2    // held notes get this much more on top
+
+    private func baseFontSize(_ size: CGSize) -> CGFloat {
+        return size.width * 0.72 * 0.026
     }
 
-    private struct PlacedWord {
-        var word: Word
-        var center: CGPoint
-        var textSize: CGSize  // measured at the active size
-        var side = LabelSide.below
-        var label = CGRect.zero  // where the text goes, beside its star
+    /// The layout for one line, worked out once and cached. Lines are laid out in order,
+    /// because each one steers around the line before it.
+    private func placedWords(_ index: Int, context: GraphicsContext, size: CGSize) -> [PlacedWord] {
+        let first = lines.first?.start ?? 0
+        let last = lines.last?.end ?? 0
+        let key = "\(lines.count)|\(first)|\(last)|\(Int(size.width))x\(Int(size.height))|\(font.rawValue)"
+        if layouts.key != key {
+            layouts.key = key
+            layouts.lines = [:]
+        }
+        var next = 0
+        while layouts.lines[next] != nil && next < index { next += 1 }
+        while next <= index {
+            if layouts.lines[next] == nil {
+                let before = next > 0 ? (layouts.lines[next - 1] ?? []) : []
+                layouts.lines[next] = layout(next, avoiding: before, context: context, size: size)
+            }
+            next += 1
+        }
+        return layouts.lines[index] ?? []
     }
 
-    /// Grows the line as a path, word to word, starting from an anchor that keeps clear of the
-    /// previous line and heading away from it. Each step tries seeded directions around the current
-    /// heading and takes the first spot that stays on screen, does not overlap a word, and whose
-    /// link neither crosses an earlier link nor runs through another word.
-    private func layout(_ index: Int, context: GraphicsContext, size: CGSize, baseFont: CGFloat) -> [PlacedWord] {
+    /// Everything already on screen that a new star, link or label must keep clear of.
+    private struct Obstacles {
+        var stars: [CGPoint] = []
+        var labels: [CGRect] = []
+        var links: [(CGPoint, CGPoint)] = []
+    }
+
+    /// Grows a line as a path, word to word. Each star is placed only where its link crosses
+    /// nothing, passes through no label or star, and where its own label has a free side.
+    /// The previous line counts as an obstacle, so the two never pile up.
+    private func layout(_ index: Int, avoiding previous: [PlacedWord], context: GraphicsContext, size: CGSize) -> [PlacedWord] {
         let words = lines[index].words
         guard !words.isEmpty else { return [] }
-        // Measure at the active size, the biggest a word gets, so a lit word never collides.
-        let boxes = words.map { word in
-            context.resolve(Text(word.text.lowercased()).font(font.font(size: baseFont * 1.8))).measure(in: size)
+
+        let base = baseFontSize(size)
+        // Measure each label at the biggest size it will ever be drawn.
+        let textSizes = words.map { word -> CGSize in
+            let biggest = base * activeScale * (isLong(word, in: lines[index]) ? longScale : 1)
+            return context.resolve(Text(word.text.lowercased()).font(font.font(size: biggest))).measure(in: size)
+        }
+        let margin = CGRect(origin: .zero, size: size).insetBy(dx: size.width * 0.12, dy: size.height * 0.12)
+
+        var obstacles = Obstacles()
+        for (k, item) in previous.enumerated() {
+            obstacles.stars.append(item.center)
+            obstacles.labels.append(item.label)
+            if k > 0 { obstacles.links.append((previous[k - 1].center, item.center)) }
         }
 
-        // Keep 14% clear on every side.
-        let margin = CGRect(origin: .zero, size: size).insetBy(dx: size.width * 0.14, dy: size.height * 0.14)
-        let (start, previous) = anchors(upTo: index, in: margin)
-
-        // Point away from where the last line was, give or take 45 degrees.
-        var heading = seeded(index, 3) * 2 * Double.pi
-        if let previous {
-            heading = atan2(start.y - previous.y, start.x - previous.x) + (seeded(index, 5) - 0.5) * 1.6
+        // Start far from where the previous line sat.
+        var away = CGPoint(x: size.width / 2, y: size.height / 2)
+        if !previous.isEmpty {
+            away.x = previous.reduce(0) { $0 + $1.center.x } / CGFloat(previous.count)
+            away.y = previous.reduce(0) { $0 + $1.center.y } / CGFloat(previous.count)
         }
+        var bestStart: (CGPoint, CGRect, LabelSide)? = nil
+        var bestDistance: CGFloat = -1
+        for attempt in 0..<40 {
+            let point = CGPoint(x: margin.minX + margin.width * seeded(index, 20 + attempt),
+                                y: margin.minY + margin.height * seeded(index, 80 + attempt))
+            guard starIsFree(point, obstacles),
+                  let (label, side) = freeLabel(for: point, text: textSizes[0], gap: gap(words[0], index), obstacles, size)
+            else { continue }
+            let distance = previous.isEmpty ? 1 : hypot(point.x - away.x, point.y - away.y)
+            if distance > bestDistance {
+                bestStart = (point, label, side)
+                bestDistance = distance
+            }
+            if distance >= size.width * 0.3 { break }  // far enough; taking it keeps placement varied
+        }
+        let start = bestStart ?? (CGPoint(x: margin.midX, y: margin.midY),
+                                  labelArea(CGPoint(x: margin.midX, y: margin.midY), textSizes[0], side: .below, gap: 22), .below)
 
-        var placed = [PlacedWord(word: words[0], center: start, textSize: boxes[0])]
-        var taken = [footprint(start, boxes[0])]
-        var links: [(CGPoint, CGPoint)] = []
+        var placed = [PlacedWord(word: words[0], center: start.0, label: start.1, side: start.2)]
+        obstacles.stars.append(start.0)
+        obstacles.labels.append(start.1)
+
+        // Head away from the previous line, give or take 45 degrees.
+        var heading = atan2(start.0.y - away.y, start.0.x - away.x) + (seeded(index, 5) - 0.5) * 1.6
 
         for k in words.indices.dropFirst() {
             let from = placed[k - 1].center
-            let distance = (boxes[k - 1].width + boxes[k].width) * 0.3 + size.height * (0.07 + 0.05 * seeded(index * 100 + k, 1))
-            var chosen: CGPoint? = nil
+            let step = max((textSizes[k - 1].width + textSizes[k].width) * 0.35, base * 3) + base * 2 * seeded(index * 100 + k, 1)
+            var found: PlacedWord? = nil
 
-            // First 30 tries obey every rule; the next 30 only avoid overlapping words.
-            for attempt in 0..<60 {
-                let strict = attempt < 30
-                let spread = 1.2 + Double(attempt % 30) * 0.15  // widen the search as tries fail
+            // Search around the heading, widening the angle and reaching further as tries fail.
+            for attempt in 0..<160 where found == nil {
+                let ring = Double(attempt / 16)  // 0 to 9: each ring reaches 25% further
+                let spread = 1.4 + Double(attempt % 16) * 0.3  // up to a full circle
                 let angle = heading + (seeded(index * 100 + k, 10 + attempt) - 0.5) * spread
-                let candidate = CGPoint(x: from.x + cos(angle) * distance, y: from.y + sin(angle) * distance * 0.75)
+                let distance = step * (1 + 0.25 * ring)
+                let point = CGPoint(x: from.x + cos(angle) * distance, y: from.y + sin(angle) * distance * 0.8)
 
-                let box = footprint(candidate, boxes[k])
-                guard margin.contains(candidate), !taken.contains(where: { $0.intersects(box) }) else { continue }
-                if strict {
-                    // Skip the last link: it shares an end with the new one, so it always "touches".
-                    let crosses = links.dropLast().contains { segmentsCross(from, candidate, $0.0, $0.1) }
-                    let throughWord = taken.dropLast().contains { segment(from, candidate, hits: $0) }
-                    if crosses || throughWord { continue }
-                }
-                chosen = candidate
+                // The previous word may move its label once it knows where this link goes,
+                // so check against everything except that label.
+                var others = obstacles
+                others.labels.removeLast()
+                guard margin.contains(point), starIsFree(point, others), linkIsFree(from, point, others) else { continue }
+                others.links.append((from, point))
+                others.stars.append(point)
+                guard let (previousLabel, previousSide) = freeLabel(for: from, text: textSizes[k - 1],
+                                                                     gap: gap(words[k - 1], index), others, size)
+                else { continue }
+                others.labels.append(previousLabel)
+                guard let (label, side) = freeLabel(for: point, text: textSizes[k], gap: gap(words[k], index), others, size)
+                else { continue }
+
+                placed[k - 1].label = previousLabel
+                placed[k - 1].side = previousSide
+                obstacles.labels[obstacles.labels.count - 1] = previousLabel
+                found = PlacedWord(word: words[k], center: point, label: label, side: side)
                 heading = angle  // keep walking roughly the same way, so the line reads as a path
-                break
             }
 
-            // ponytail: a very long line can run out of room; the word then sits in the nearest on-screen spot.
-            let spot = chosen ?? CGPoint(x: min(max(from.x + cos(heading) * distance, margin.minX), margin.maxX),
-                                         y: min(max(from.y + sin(heading) * distance, margin.minY), margin.maxY))
-            links.append((from, spot))
-            taken.append(footprint(spot, boxes[k]))
-            placed.append(PlacedWord(word: words[k], center: spot, textSize: boxes[k]))
-        }
-
-        // Like a star chart: put each label on the first side of its star that is free of
-        // links, other labels and other stars. Below is preferred because it reads best.
-        let screen = CGRect(origin: .zero, size: size)
-        var labels: [CGRect] = []
-        for k in placed.indices {
-            let gap: CGFloat = isLong(words[k], in: lines[index]) ? 34 : 22  // clear the star at its biggest, more for held notes
-            var chosenSide = LabelSide.below
-            var chosenRect = labelArea(placed[k].center, boxes[k], side: .below, gap: gap)
-            for side in LabelSide.allCases {
-                let rect = labelArea(placed[k].center, boxes[k], side: side, gap: gap)
-                let hitsLink = links.contains { segment($0.0, $0.1, hits: rect) }
-                let hitsLabel = labels.contains { $0.intersects(rect) }
-                let hitsStar = placed.indices.contains { $0 != k && rect.insetBy(dx: -8, dy: -8).contains(placed[$0].center) }
-                if !hitsLink && !hitsLabel && !hitsStar && screen.contains(rect) {
-                    chosenSide = side
-                    chosenRect = rect
-                    break
+            // ponytail: a crowded screen can leave no clean spot; the word then takes any free one, link rules relaxed.
+            if found == nil {
+                for attempt in 0..<60 where found == nil {
+                    let point = CGPoint(x: margin.minX + margin.width * seeded(index * 100 + k, 200 + attempt),
+                                        y: margin.minY + margin.height * seeded(index * 100 + k, 300 + attempt))
+                    guard starIsFree(point, obstacles),
+                          let (label, side) = freeLabel(for: point, text: textSizes[k], gap: gap(words[k], index), obstacles, size)
+                    else { continue }
+                    found = PlacedWord(word: words[k], center: point, label: label, side: side)
                 }
             }
-            placed[k].side = chosenSide
-            placed[k].label = chosenRect
-            labels.append(chosenRect)
+            let point = found?.center ?? from
+            let item = found ?? PlacedWord(word: words[k], center: from,
+                                           label: labelArea(from, textSizes[k], side: .below, gap: 22), side: .below)
+            obstacles.links.append((from, point))
+            obstacles.stars.append(point)
+            obstacles.labels.append(item.label)
+            placed.append(item)
         }
         return placed
+    }
+
+    /// How far a label sits from its star: past the star at its biggest, more for held notes.
+    private func gap(_ word: Word, _ index: Int) -> CGFloat {
+        return isLong(word, in: lines[index]) ? 32 : 22
+    }
+
+    /// How far text keeps from any other star: a held note's star at full kick is about 25 pt across.
+    private let starClearance: CGFloat = 34
+
+    /// A star needs room: away from other stars and outside every label.
+    private func starIsFree(_ point: CGPoint, _ obstacles: Obstacles) -> Bool {
+        let tooClose = obstacles.stars.contains { hypot($0.x - point.x, $0.y - point.y) < 72 }
+        let inLabel = obstacles.labels.contains { $0.insetBy(dx: -starClearance, dy: -starClearance).contains(point) }
+        return !tooClose && !inLabel
+    }
+
+    /// A link may not cross another link, cut through a label, or graze a star it does not join.
+    private func linkIsFree(_ from: CGPoint, _ to: CGPoint, _ obstacles: Obstacles) -> Bool {
+        let crosses = obstacles.links.contains { link in
+            let sharesEnd = link.0 == from || link.1 == from
+            return !sharesEnd && segmentsCross(from, to, link.0, link.1)
+        }
+        let throughLabel = obstacles.labels.contains { segment(from, to, hits: $0.insetBy(dx: -4, dy: -4)) }
+        let throughStar = obstacles.stars.contains { star in
+            star != from && segment(from, to, hits: CGRect(x: star.x - 12, y: star.y - 12, width: 24, height: 24))
+        }
+        return !crosses && !throughLabel && !throughStar
+    }
+
+    /// Like a star chart: the first side of the star where the label touches no link, label or
+    /// other star and stays on screen. Below is tried first because it reads best.
+    private func freeLabel(for star: CGPoint, text: CGSize, gap: CGFloat, _ obstacles: Obstacles,
+                           _ size: CGSize) -> (CGRect, LabelSide)? {
+        let screen = CGRect(origin: .zero, size: size).insetBy(dx: 8, dy: 8)
+        for side in LabelSide.allCases {
+            let rect = labelArea(star, text, side: side, gap: gap)
+            let padded = rect.insetBy(dx: -8, dy: -4)
+            let hitsLink = obstacles.links.contains { segment($0.0, $0.1, hits: padded) }
+            let hitsLabel = obstacles.labels.contains { $0.intersects(padded) }
+            let hitsStar = obstacles.stars.contains { $0 != star && rect.insetBy(dx: -starClearance, dy: -starClearance).contains($0) }
+            if !hitsLink && !hitsLabel && !hitsStar && screen.contains(rect) {
+                return (rect, side)
+            }
+        }
+        return nil
     }
 
     /// The rectangle a label takes on one side of its star.
@@ -247,43 +362,6 @@ struct ConstellationPainter {
         }
     }
 
-    /// Start points for lines 0...index, each chosen to sit well away from the one before.
-    /// Returns this line's anchor and the previous line's (nil for the first line).
-    private func anchors(upTo index: Int, in margin: CGRect) -> (CGPoint, CGPoint?) {
-        var previous: CGPoint? = nil
-        var current = CGPoint(x: margin.midX, y: margin.midY)
-        for line in 0...index {
-            var best = current
-            var bestDistance = -1.0
-            for candidate in 0..<8 {
-                let point = CGPoint(x: margin.minX + margin.width * (0.15 + 0.7 * seeded(line, 20 + candidate)),
-                                    y: margin.minY + margin.height * (0.15 + 0.7 * seeded(line, 40 + candidate)))
-                guard let last = (line == 0 ? nil : current) else {
-                    best = point
-                    break
-                }
-                let distance = hypot(point.x - last.x, point.y - last.y)
-                if distance >= margin.width * 0.35 {
-                    best = point  // far enough; taking the first keeps the placement varied
-                    break
-                }
-                if distance > bestDistance {
-                    best = point
-                    bestDistance = distance
-                }
-            }
-            if line > 0 { previous = current }
-            current = best
-        }
-        return (current, previous)
-    }
-
-    /// The area a word claims: its star above, its text below, plus breathing room.
-    private func footprint(_ star: CGPoint, _ text: CGSize) -> CGRect {
-        return CGRect(x: star.x - text.width / 2 - 16, y: star.y - 24,
-                      width: text.width + 32, height: text.height + 48)
-    }
-
     // MARK: Drawing
 
     private func drawLine(_ index: Int, context: GraphicsContext, size: CGSize, fade: Double) {
@@ -293,8 +371,8 @@ struct ConstellationPainter {
         layer.translateBy(x: 0, y: -(1 - fade) * 50)
 
         let line = lines[index]
-        let baseFont = size.width * 0.72 * 0.032  // 3.2% of the usable width
-        let placed = layout(index, context: context, size: size, baseFont: baseFont)
+        let baseFont = baseFontSize(size)
+        let placed = placedWords(index, context: context, size: size)
 
         // Links between consecutive stars, growing toward each new star as it lights.
         for k in placed.indices.dropFirst() {
@@ -320,7 +398,7 @@ struct ConstellationPainter {
             // Star size: grows in, overshoots with the kick, twinkles 8% at 1.4 Hz.
             let twinkle = 1 + 0.08 * sin(2 * Double.pi * 1.4 * clock + seeded(Int(item.word.start * 1000), 7) * 6.28)
             var radius = progress * (1 + kickAmount * spring) * (current ? 13.5 : 9) * twinkle
-            if long { radius *= 1.8 }
+            if long { radius *= 1.4 }
 
             var starLayer = layer
             starLayer.opacity = fade * (current ? 1 : 0.55)
@@ -336,8 +414,8 @@ struct ConstellationPainter {
             }
 
             // Text fades in over 0.5 s while drifting up into place, with a slight tilt from the kick.
-            var fontSize = baseFont * (current ? 1.8 : 1)
-            if long { fontSize *= 2.4 / 1.8 }  // ponytail: tamed from Verci's x2.4 so long words fit our layout boxes
+            var fontSize = baseFont * (current ? activeScale : 1)
+            if long { fontSize *= longScale }  // smaller than Verci's x2.4 so held notes fit their label space
             let color = current ? textColor : secondary
             let text = context.resolve(Text(item.word.text.lowercased()).font(font.font(size: fontSize)).foregroundStyle(color))
 

@@ -33,21 +33,31 @@ func runSelfTest() {
     print("selftest ok")
 }
 
-/// `Lilt --preview out.png`: draws one frame of the constellation with sample lyrics, no music needed.
+/// `Lilt --preview out.png [seconds] [width] [height]`: draws one frame of the constellation
+/// with sample lyrics, no music needed.
 @MainActor
-func renderPreview(to path: String) {
-    let lines = [
-        LyricLine(start: 0, end: 3, words: estimateWords("we drew the stars ourselves out of nothing", start: 0, end: 3)),
-        LyricLine(start: 3, end: 6, words: estimateWords("and named them after everyone we never got to meet", start: 3, end: 6)),
+func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 1512, height: CGFloat = 982) {
+    let sample = [
+        "we drew the stars ourselves out of nothing",
+        "and named them after everyone we never got to meet",
+        "you are the poison (ooh) the cure",
+        "we were never meant to",
+        "hold on (hold on) hold on to me",
+        "every light in the city went out at once",
     ]
-    let painter = ConstellationPainter(lines: lines, songTime: 5.5, clock: 0,
+    var lines: [LyricLine] = []
+    for (i, text) in sample.enumerated() {
+        let start = Double(i) * 3
+        lines.append(LyricLine(start: start, end: start + 3, words: estimateWords(text, start: start, end: start + 3)))
+    }
+    let painter = ConstellationPainter(lines: lines, songTime: songTime, clock: 0,
                                        textColor: colorFromHex(Theme.defaultText),
                                        highlight: colorFromHex(Theme.defaultHighlight),
                                        secondary: colorFromHex(Theme.defaultSecondary),
-                                       font: .sfPro)
+                                       font: .sfPro, layouts: LayoutCache())
     let frame = Canvas { context, size in painter.draw(context, size: size) }
-        .frame(width: 1512, height: 982)
-        .background(LinearGradient(colors: [.indigo, .black], startPoint: .top, endPoint: .bottom))
+        .frame(width: width, height: height)
+        .background(Color.black)
     let renderer = ImageRenderer(content: frame)
     guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {

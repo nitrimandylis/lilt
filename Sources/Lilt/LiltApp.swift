@@ -14,7 +14,11 @@ struct LiltApp: App {
             exit(0)
         }
         if let flag = CommandLine.arguments.firstIndex(of: "--preview"), flag + 1 < CommandLine.arguments.count {
-            MainActor.assumeIsolated { renderPreview(to: CommandLine.arguments[flag + 1]) }
+            let args = CommandLine.arguments
+            let time = flag + 2 < args.count ? Double(args[flag + 2]) ?? 5.5 : 5.5
+            let width = flag + 3 < args.count ? Double(args[flag + 3]) ?? 1512 : 1512
+            let height = flag + 4 < args.count ? Double(args[flag + 4]) ?? 982 : 982
+            MainActor.assumeIsolated { renderPreview(to: args[flag + 1], at: time, width: width, height: height) }
             exit(0)
         }
     }

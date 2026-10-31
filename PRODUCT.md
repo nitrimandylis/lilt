@@ -18,12 +18,20 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 ## Styles
 
 - **Constellation** (v1, the only one): words land on a golden-angle spiral around a
-  seeded anchor, each as a star with a link traced from the previous one. A word
-  reveals over its own sung length (ease-out cubic), gets a damped kick in size and
-  tilt when it lands, and the current word pulses an expanding ring. Finished lines
-  drift up and fade into a twinkling starfield. Colour comes from the album's
-  artwork `bgColor`. Timing model studied from Verci's decompiled Constellation
-  scene, reimplemented from scratch.
+  seeded anchor, each as a four-point star with a link traced from the previous one.
+  A star grows over its word's sung length (ease-out cubic) and gets a damped kick in
+  size and tilt when it lands; the whole scene shakes slightly with it. The current
+  word is large, in the text colour, with a ring pulsing in the highlight colour;
+  sung words shrink to secondary at 55%. No background or glow: 26 faint dust motes
+  and one soft drop shadow over the wallpaper. Text is lowercase semibold.
+  Look and timing studied from Verci's decompiled Constellation scene, reimplemented.
+
+## Settings (menu bar)
+
+- Colors: lyric text, highlight, secondary text (default white, white, white 70%),
+  Auto Sync (highlight from the album's artwork colour), Reset.
+- Font: SF Pro, SF Rounded, New York, Helvetica Neue.
+- Show when unlocked, Cider token.
 
 ## Build
 

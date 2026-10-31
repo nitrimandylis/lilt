@@ -21,6 +21,7 @@ func runSelfTest() {
     precondition(second.words.count == 2 && abs(second.words[0].end - 63.25) < 0.001, "3 of 8 letters gets 3/8 of 2 s")
 
     precondition(unescapeHTML("&lt;p&gt;Rock &amp;amp; Roll&lt;/p&gt;") == "<p>Rock &amp; Roll</p>", "unescape once")
+    precondition(hexFromColor(colorFromHex("#FF336680")) == "#FF336680", "hex colour round trip")
     precondition(parseTime("00:00:10.050") == 10.05 && parseTime("12.3s") == 12.3, "time formats")
 
     print("selftest ok")
@@ -34,7 +35,10 @@ func renderPreview(to path: String) {
         LyricLine(start: 3, end: 6, words: estimateWords("and named them after nothing", start: 3, end: 6)),
     ]
     let painter = ConstellationPainter(lines: lines, songTime: 4.9, clock: 0,
-                                       accent: albumAccent(hex: "e0567a"), caption: "Sample Song — Lilt")
+                                       textColor: colorFromHex(Theme.defaultText),
+                                       highlight: colorFromHex(Theme.defaultHighlight),
+                                       secondary: colorFromHex(Theme.defaultSecondary),
+                                       font: .sfPro)
     let frame = Canvas { context, size in painter.draw(context, size: size) }
         .frame(width: 1512, height: 982)
         .background(LinearGradient(colors: [.indigo, .black], startPoint: .top, endPoint: .bottom))

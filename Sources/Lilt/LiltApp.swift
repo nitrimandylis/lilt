@@ -164,6 +164,11 @@ struct MenuView: View {
     @ObservedObject var player: PlayerMonitor
     // ponytail: token sits in UserDefaults in plain text, move to Keychain if that ever matters.
     @AppStorage("ciderToken") private var token = ""
+    @AppStorage("textColor") private var textHex = Theme.defaultText
+    @AppStorage("highlightColor") private var highlightHex = Theme.defaultHighlight
+    @AppStorage("secondaryColor") private var secondaryHex = Theme.defaultSecondary
+    @AppStorage("autoSyncColors") private var autoSync = false
+    @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -174,6 +179,24 @@ struct MenuView: View {
                 Text("Nothing playing").font(.headline)
             }
             Text(model.status).font(.caption).foregroundStyle(.secondary)
+
+            Divider()
+            Text("Color").font(.caption).foregroundStyle(.secondary)
+            Toggle("Auto Sync from album", isOn: $autoSync)
+            ColorPicker("Lyric text", selection: hexBinding($textHex))
+            ColorPicker("Highlight", selection: hexBinding($highlightHex)).disabled(autoSync)
+            ColorPicker("Secondary text", selection: hexBinding($secondaryHex))
+            Button("Reset colors") {
+                textHex = Theme.defaultText
+                highlightHex = Theme.defaultHighlight
+                secondaryHex = Theme.defaultSecondary
+            }
+
+            Picker("Font", selection: $fontChoice) {
+                ForEach(LyricFont.allCases) { choice in
+                    Text(choice.rawValue).tag(choice.rawValue)
+                }
+            }
 
             Divider()
             Toggle("Show when unlocked", isOn: $model.showWhenUnlocked)

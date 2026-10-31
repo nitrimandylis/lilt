@@ -17,8 +17,10 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Styles
 
-- **Constellation** (v1, the only one): words land on a golden-angle spiral around a
-  seeded anchor, each as a four-point star with a link traced from the previous one.
+- **Constellation** (v1, the only one): each line grows as a path, word to word, from
+  an anchor kept clear of the previous line and heading away from it. Links never cross
+  and never run through a word; labels sit on whichever side of their star is free,
+  like a star chart. Each word is a four-point star with a link traced from the previous one.
   A star blooms over its word's sung length (at least 0.45 s, ease-out cubic) and
   settles with one soft 10% swing; text fades in over 0.5 s while drifting up. The current
   word is large, in the text colour, with a ring pulsing in the highlight colour;

@@ -25,6 +25,9 @@ func runSelfTest() {
     // A muted navy album with one teal swatch: teal wins the highlight.
     let palette = AlbumPalette(hexes: ["09161d", "d2d0c0", "2aa198"])
     precondition(palette != nil && AlbumPalette(hexes: []) == nil, "palette from swatches, nil from none")
+    precondition(segmentsCross(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 0, y: 10), CGPoint(x: 10, y: 0)), "an X crosses")
+    precondition(!segmentsCross(CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 0), CGPoint(x: 0, y: 5), CGPoint(x: 10, y: 5)), "parallel lines do not")
+    precondition(segment(CGPoint(x: -5, y: 5), CGPoint(x: 15, y: 5), hits: CGRect(x: 0, y: 0, width: 10, height: 10)), "line through a box hits it")
     precondition(parseTime("00:00:10.050") == 10.05 && parseTime("12.3s") == 12.3, "time formats")
 
     print("selftest ok")
@@ -34,10 +37,10 @@ func runSelfTest() {
 @MainActor
 func renderPreview(to path: String) {
     let lines = [
-        LyricLine(start: 0, end: 3, words: estimateWords("we drew the stars ourselves", start: 0, end: 3)),
-        LyricLine(start: 3, end: 6, words: estimateWords("and named them after nothing", start: 3, end: 6)),
+        LyricLine(start: 0, end: 3, words: estimateWords("we drew the stars ourselves out of nothing", start: 0, end: 3)),
+        LyricLine(start: 3, end: 6, words: estimateWords("and named them after everyone we never got to meet", start: 3, end: 6)),
     ]
-    let painter = ConstellationPainter(lines: lines, songTime: 4.9, clock: 0,
+    let painter = ConstellationPainter(lines: lines, songTime: 5.5, clock: 0,
                                        textColor: colorFromHex(Theme.defaultText),
                                        highlight: colorFromHex(Theme.defaultHighlight),
                                        secondary: colorFromHex(Theme.defaultSecondary),

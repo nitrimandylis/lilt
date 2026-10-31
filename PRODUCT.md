@@ -17,9 +17,13 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Styles
 
-- **Constellation** (v1, the only one): each word lands as a star with a link traced
-  from the previous one; finished lines drift up and fade into a twinkling starfield.
-  Colour comes from the album's artwork `bgColor`.
+- **Constellation** (v1, the only one): words land on a golden-angle spiral around a
+  seeded anchor, each as a star with a link traced from the previous one. A word
+  reveals over its own sung length (ease-out cubic), gets a damped kick in size and
+  tilt when it lands, and the current word pulses an expanding ring. Finished lines
+  drift up and fade into a twinkling starfield. Colour comes from the album's
+  artwork `bgColor`. Timing model studied from Verci's decompiled Constellation
+  scene, reimplemented from scratch.
 
 ## Build
 

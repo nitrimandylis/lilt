@@ -64,6 +64,9 @@ func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 
         scene = AnyView(Canvas { context, size in painter.draw(context, size: size) })
     case .ship:
         scene = AnyView(WallScene(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro))
+    case .codestyle:
+        let code = CodePainter(lines: lines, songTime: songTime, clock: songTime)
+        scene = AnyView(Canvas { context, size in code.draw(context, size: size) })
     }
     let frame = scene
         .frame(width: width, height: height)

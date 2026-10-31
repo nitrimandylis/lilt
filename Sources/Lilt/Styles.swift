@@ -5,6 +5,7 @@ import SwiftUI
 enum LyricStyle: String, CaseIterable, Identifiable {
     case constellation = "Constellation"
     case ship = "Ship"
+    case codestyle = "Codestyle"
 
     var id: String { rawValue }
 }
@@ -28,6 +29,8 @@ struct LyricsView: View {
             ConstellationView(model: model, player: player)
         case .ship:
             WallView(model: model, player: player)
+        case .codestyle:
+            CodeView(model: model, player: player)
         }
     }
 }

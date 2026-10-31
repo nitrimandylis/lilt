@@ -80,9 +80,14 @@ final class LyricsStore {
         let json = await cider.amapi("/v1/me/storefront")
         let apple = json?["data"] as? [String: Any]
         let first = (apple?["data"] as? [[String: Any]])?.first
-        let id = first?["id"] as? String ?? "us"
+        guard let id = first?["id"] as? String else { return "us" }  // not cached, so the next call asks again
         storefront = id
         return id
+    }
+
+    /// True when Cider can get an answer from Apple Music at all.
+    func appleMusicReachable() async -> Bool {
+        return await cider.amapi("/v1/me/storefront") != nil
     }
 
     private func searchCatalogId(title: String, artist: String, storefront: String) async -> String? {

@@ -87,17 +87,27 @@ final class AppModel: ObservableObject {
         }
         status = "Looking up lyrics…"
         Task {
-            let colors = await store.artworkColors(for: track)
-            let found = await store.lyrics(for: track)
-            guard player.track == track else { return }  // the song changed while we waited
-            palette = AlbumPalette(hexes: colors)
-            lyrics = found
-            if let found {
-                status = found.wordTimed ? "Word-timed lyrics" : "Line-timed lyrics, word times estimated"
-            } else {
-                status = "No lyrics found (is Cider open with a token?)"
+            // Retry while Cider cannot reach Apple Music (it can lose the network after a
+            // Wi-Fi change); stop as soon as lyrics arrive or Apple says the song has none.
+            for _ in 0..<40 {
+                let colors = await store.artworkColors(for: track)
+                let found = await store.lyrics(for: track)
+                guard player.track == track else { return }  // the song changed while we waited
+                if palette == nil { palette = AlbumPalette(hexes: colors) }
+                if let found {
+                    lyrics = found
+                    status = found.wordTimed ? "Word-timed lyrics" : "Line-timed lyrics, word times estimated"
+                    refresh()
+                    return
+                }
+                if await store.appleMusicReachable() {
+                    status = "No lyrics for this song"
+                    return
+                }
+                guard player.track == track else { return }
+                status = "Cider can't reach Apple Music. Retrying… (restart Cider or check the token)"
+                try? await Task.sleep(for: .seconds(15))
             }
-            refresh()
         }
     }
 

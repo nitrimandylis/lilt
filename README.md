@@ -52,7 +52,9 @@ Also in the menu: colours that follow the album art (auto sync) or three you pic
 
 ## 🚀 Run it
 
-Needs macOS 14 or later and Xcode (for `swift build`).
+Download `Lilt-<version>.dmg` from [Releases](https://github.com/nitrimandylis/lilt/releases/latest), drag Lilt into Applications, then right-click → Open the first time (it is ad-hoc signed, not damaged, just unpaid). Works on Apple silicon and Intel, macOS 14 or later.
+
+Or build it yourself (needs Xcode):
 
 ```bash
 git clone https://github.com/nitrimandylis/lilt.git
@@ -61,7 +63,7 @@ cd lilt
 open build/Lilt.app
 ```
 
-Play something in Music, Spotify or Cider, then lock the mac. The app is ad-hoc signed, so the first launch needs right-click → Open (it is not damaged, it is just unpaid).
+Play something in Music, Spotify or Cider, then lock the mac. `./release.sh 0.1.0` builds the universal, ad-hoc signed DMG instead.
 
 Optional, for Apple's word-timed lyrics: in Cider, open Settings → Connectivity, create an app token, and paste it into Lilt's menu.
 

@@ -17,20 +17,25 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Styles
 
-- **Constellation** (v1, the only one): each line follows one of four seeded shapes (arc,
-  wave, zigzag, hook), traced once and placed so the shape's centre sits in the middle of
-  the screen; back-to-back lines alternate just above and just below centre. The previous line's stars, links and labels are obstacles until
-  it has faded.
-  A star is placed only where its link crosses nothing, passes through no label or star,
-  and both it and the previous word still have a free side for their labels (star-chart
-  style, below preferred). Layouts are cached per line, so shapes stay put frame to frame.
-  `--preview out.png [seconds] [width] [height]` renders a frame of sample lyrics.
-  A star blooms over its word's sung length (at least 0.45 s, ease-out cubic) and
-  settles with one soft 10% swing; text fades in over 0.5 s while drifting up. The current
-  word is large, in the text colour, with a ring pulsing in the highlight colour;
-  sung words shrink to secondary at 55%. No background or glow: 26 faint dust motes
-  and one soft drop shadow over the wallpaper. Text is lowercase semibold.
-  Look and timing studied from Verci's decompiled Constellation scene, reimplemented.
+Picked from the menu. Each is studied from Verci's decompiled scene of the same name and
+rewritten from scratch; no Verci code or data tables are used.
+
+- **Constellation**: each line is a seeded path of four-point stars (arc, wave, zigzag or
+  hook) through the middle of the screen; star-chart labels, no crossings, no overlaps.
+- **Ship**: the last 5 sung words stack into a ragged, tilted wall that slowly yaws,
+  pitches and breathes in 3D; about 1 word in 5 sits on a highlight band.
+- **Visual**: Ship at half the sway, with an SF Symbol popping in beside matched words.
+- **Fisheye / Fisheye Visual**: previous, current and next word under a convex lens
+  (k = 1 + 0.45 r^2.2), applied per row; Visual adds icons.
+- **Codestyle / Codestyle Visual**: the line typed as code (a.b.c(d);) in bold monospace with
+  syntax colours, letters springing in with a glow, a red blinking cursor, // comments and a
+  "seen" caption now and then; Visual adds an icon before some rows.
+- **Branches**: a wavy stem grows through the line; each word sprouts a branch with a node
+  and its label, the head glowing with a trail; faint code glyphs drift behind.
+- **Web**: a 12-spoke, 4-ring spider web; each word spins a strand from the hub to a node.
+
+Icons come from macOS's own SF Symbols search index, with Apple's on-device word embedding
+finding close words when there is no direct match.
 
 ## Settings (menu bar)
 
@@ -51,6 +56,6 @@ lock screen (or always, with one toggle) and lights each word the moment it is s
 
 ## Where it is headed
 
-- Verify Apple's word-level lyrics through Cider on a live song.
+- A real per-pixel Metal lens for Fisheye (needs Xcode's Metal toolchain).
 - More styles, a style picker in the menu.
 - Spotify, if ever needed.

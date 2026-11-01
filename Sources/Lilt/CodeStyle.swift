@@ -12,13 +12,14 @@ import SwiftUI
 struct CodeView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var player: PlayerMonitor
+    let withIcons: Bool
     var settings = StyleSettings()
 
     var body: some View {
         TimelineView(.animation) { timeline in
             let painter = CodePainter(lines: model.lyrics?.lines ?? [],
                                       songTime: settings.songTime(player: player, model: model, at: timeline.date),
-                                      clock: timeline.date.timeIntervalSinceReferenceDate)
+                                      clock: timeline.date.timeIntervalSinceReferenceDate, withIcons: withIcons)
             Canvas { context, size in painter.draw(context, size: size) }
         }
         .background(Color.black)
@@ -51,6 +52,7 @@ struct CodeGlyph {
 
 struct CodeChunk {
     var glyphs: [CodeGlyph]
+    var words: [Word]
     var start: Double       // when its first word starts
     var caption: String?    // a small "seen 2:14 am" under some line endings
     var seed: Int
@@ -139,13 +141,14 @@ private func buildChunk(_ words: [Word], isLastInLine: Bool) -> CodeChunk {
         let second = Int(seeded(seed, 6) * 60)
         caption = String(format: "seen %d:%02d am", minute, second)
     }
-    return CodeChunk(glyphs: glyphs, start: start, caption: caption, seed: seed)
+    return CodeChunk(glyphs: glyphs, words: words, start: start, caption: caption, seed: seed)
 }
 
 struct CodePainter {
     let lines: [LyricLine]
     let songTime: Double
     let clock: Double
+    var withIcons = false
 
     let cursorColor = Color(red: 1.0, green: 0.16, blue: 0.13)
 
@@ -208,6 +211,7 @@ struct CodePainter {
 
         let width = CGFloat(chunk.glyphs.count) * charWidth
         var x = -width / 2
+        if withIcons { drawIcon(for: chunk, context: row, x: x - fontSize * 0.3, fontSize: fontSize) }
         var cursorX = x
         var typing = false
 
@@ -238,6 +242,28 @@ struct CodePainter {
         let cursor = CGRect(x: cursorX + charWidth * 0.08, y: -fontSize * 0.54, width: charWidth * 0.55, height: fontSize * 1.08)
         row.fill(Path(roundedRect: cursor, cornerRadius: charWidth * 0.12), with: .color(cursorColor.opacity(cursorOpacity)))
 
+        drawCaption(chunk, row: row, context: context, width: width, fontSize: fontSize)
+    }
+
+    /// Codestyle Visual: half the chunks get an icon before the code, from their newest word that
+    /// has one. It springs in and untwists from -14 degrees, in the accent colour.
+    private func drawIcon(for chunk: CodeChunk, context: GraphicsContext, x: CGFloat, fontSize: CGFloat) {
+        guard seeded(chunk.seed, 10) < 0.5 else { return }
+        let sung = chunk.words.filter { $0.start <= songTime }
+        guard let word = sung.last(where: { WordIcons.shared.symbol(for: $0.text) != nil }),
+              let symbol = WordIcons.shared.symbol(for: word.text) else { return }
+        let age = songTime - word.start
+        let spring = 1 - exp(-age / 0.1) * cos(14 * age)  // overshoots, then settles at 1
+        var icon = context
+        icon.translateBy(x: x - fontSize * 0.5, y: 0)
+        icon.rotate(by: .degrees(-14 * exp(-age / 0.15)))
+        icon.scaleBy(x: spring, y: spring)
+        let image = Image(systemName: symbol)
+        icon.draw(context.resolve(Text(image).font(.system(size: fontSize, weight: .bold)).foregroundStyle(CodeRole.accent.color)),
+                  at: .zero, anchor: .center)
+    }
+
+    private func drawCaption(_ chunk: CodeChunk, row: GraphicsContext, context: GraphicsContext, width: CGFloat, fontSize: CGFloat) {
         if let caption = chunk.caption, let last = lines.last(where: { $0.words.first?.start ?? 0 <= songTime }),
            let lastWord = last.words.last, songTime >= lastWord.start {
             // The caption fades in to 80% over 0.3 s once the last word starts.

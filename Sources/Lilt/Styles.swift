@@ -9,6 +9,9 @@ enum LyricStyle: String, CaseIterable, Identifiable {
     case fisheye = "Fisheye"
     case fisheyeVisual = "Fisheye Visual"
     case codestyle = "Codestyle"
+    case codestyleVisual = "Codestyle Visual"
+    case branches = "Branches"
+    case web = "Web"
 
     var id: String { rawValue }
 }
@@ -39,7 +42,13 @@ struct LyricsView: View {
         case .fisheyeVisual:
             FisheyeView(model: model, player: player, withIcons: true)
         case .codestyle:
-            CodeView(model: model, player: player)
+            CodeView(model: model, player: player, withIcons: false)
+        case .codestyleVisual:
+            CodeView(model: model, player: player, withIcons: true)
+        case .branches:
+            BranchesView(model: model, player: player)
+        case .web:
+            WebView(model: model, player: player)
         }
     }
 }

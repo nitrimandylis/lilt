@@ -70,9 +70,15 @@ func renderPreview(to path: String, at songTime: Double = 5.5, width: CGFloat = 
     case .fisheye, .fisheyeVisual:
         scene = AnyView(FisheyeScene(lines: lines, songTime: songTime, colors: colors, font: .sfPro,
                                      withIcons: style == .fisheyeVisual))
-    case .codestyle:
-        let code = CodePainter(lines: lines, songTime: songTime, clock: songTime)
+    case .codestyle, .codestyleVisual:
+        let code = CodePainter(lines: lines, songTime: songTime, clock: songTime, withIcons: style == .codestyleVisual)
         scene = AnyView(Canvas { context, size in code.draw(context, size: size) })
+    case .branches:
+        let branches = BranchesPainter(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro)
+        scene = AnyView(Canvas { context, size in branches.draw(context, size: size) })
+    case .web:
+        let web = WebPainter(lines: lines, songTime: songTime, clock: songTime, colors: colors, font: .sfPro)
+        scene = AnyView(Canvas { context, size in web.draw(context, size: size) })
     }
     let frame = scene
         .frame(width: width, height: height)

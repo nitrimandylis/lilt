@@ -56,7 +56,57 @@ final class LyricsStore {
         return colors
     }
 
+    /// Apple's word-timed lyrics through Cider when Cider is set up, otherwise LRCLIB.
     func lyrics(for track: Track) async -> Lyrics? {
+        if let apple = await appleLyrics(for: track) { return apple }
+        return await lrclibLyrics(for: track)
+    }
+
+    private var lrclibCache: [String: Lyrics] = [:]
+
+    /// LRCLIB (lrclib.net): a free, open lyrics database. Mostly line-timed, so word times are
+    /// estimated; some entries carry word tags, which are used when present.
+    private func lrclibLyrics(for track: Track) async -> Lyrics? {
+        let key = track.title + "|" + track.artist
+        if let cached = lrclibCache[key] { return cached }
+
+        var exact = URLComponents(string: "https://lrclib.net/api/get")!
+        exact.queryItems = [URLQueryItem(name: "track_name", value: track.title),
+                            URLQueryItem(name: "artist_name", value: track.artist),
+                            URLQueryItem(name: "album_name", value: track.album)]
+        if let duration = track.duration { exact.queryItems?.append(URLQueryItem(name: "duration", value: String(Int(duration.rounded())))) }
+
+        var synced: String? = nil
+        if let url = exact.url, let json = await fetchJSON(url) as? [String: Any] {
+            synced = json["syncedLyrics"] as? String
+        }
+        if synced == nil {
+            // No exact match: search, and take the first result that has timings.
+            var search = URLComponents(string: "https://lrclib.net/api/search")!
+            search.queryItems = [URLQueryItem(name: "track_name", value: track.title),
+                                 URLQueryItem(name: "artist_name", value: track.artist)]
+            if let url = search.url, let results = await fetchJSON(url) as? [[String: Any]] {
+                synced = results.compactMap { $0["syncedLyrics"] as? String }.first
+            }
+        }
+        guard let synced else { return nil }
+        let lyrics = parseLRC(synced)
+        guard !lyrics.lines.isEmpty else { return nil }
+        lrclibCache[key] = lyrics
+        return lyrics
+    }
+
+    private func fetchJSON(_ url: URL) async -> Any? {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        // LRCLIB asks clients to say who they are.
+        request.setValue("Lilt 0.1 (https://github.com/nitrimandylis/lilt)", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private func appleLyrics(for track: Track) async -> Lyrics? {
+        guard await appleMusicReachable() else { return nil }  // no Cider, or no token: skip quietly
         let store = await storefrontId()
         guard let id = await catalogId(for: track, storefront: store) else { return nil }
         if let cached = cache[id] { return cached }
@@ -137,6 +187,48 @@ func unescapeHTML(_ text: String) -> String {
     // Last, so "&amp;amp;" becomes "&amp;", which is still valid XML.
     result = result.replacingOccurrences(of: "&amp;", with: "&")
     return result
+}
+
+/// Reads LRC lyrics: "[01:02.50]words" per line. Enhanced LRC adds "<01:02.80>" before words,
+/// which gives real word times; otherwise each line's time is spread over its words.
+func parseLRC(_ text: String) -> Lyrics {
+    var stamped: [(Double, String)] = []
+    for raw in text.components(separatedBy: .newlines) {
+        var rest = Substring(raw)
+        var times: [Double] = []
+        // A line may carry several timestamps when it repeats.
+        while rest.hasPrefix("["), let close = rest.firstIndex(of: "]") {
+            if let time = parseTime(String(rest[rest.index(after: rest.startIndex)..<close])) { times.append(time) }
+            rest = rest[rest.index(after: close)...]
+        }
+        for time in times { stamped.append((time, String(rest).trimmingCharacters(in: .whitespaces))) }
+    }
+    stamped.sort { $0.0 < $1.0 }
+
+    var lines: [LyricLine] = []
+    var wordTimed = false
+    for (i, entry) in stamped.enumerated() {
+        let (start, content) = entry
+        let end = i + 1 < stamped.count ? stamped[i + 1].0 : start + 4
+        guard !content.isEmpty else { continue }  // an empty line marks an instrumental gap
+
+        var words: [Word] = []
+        if content.contains("<") {
+            // Enhanced LRC: "<00:12.10>word <00:12.40>word".
+            for piece in content.components(separatedBy: "<").dropFirst() {
+                guard let close = piece.firstIndex(of: ">"), let time = parseTime(String(piece[..<close])) else { continue }
+                let word = piece[piece.index(after: close)...].trimmingCharacters(in: .whitespaces)
+                if !word.isEmpty { words.append(Word(text: word, start: time, end: time)) }
+            }
+            for k in words.indices { words[k].end = k + 1 < words.count ? words[k + 1].start : end }
+            if !words.isEmpty { wordTimed = true }
+        }
+        if words.isEmpty {
+            words = estimateWords(content, start: start, end: min(end, start + 8))  // long gaps are not singing
+        }
+        lines.append(LyricLine(start: start, end: end, words: words))
+    }
+    return Lyrics(lines: lines, wordTimed: wordTimed)
 }
 
 /// Turns "0.080", "13.141", "2:27.610", "00:00:10.050" or "12.3s" into seconds.

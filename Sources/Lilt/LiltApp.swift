@@ -102,7 +102,10 @@ final class AppModel: ObservableObject {
                     refresh()
                     return
                 }
-                if await store.appleMusicReachable() {
+                // Only a Cider song that Cider cannot look up is worth retrying (Cider sometimes
+                // loses the network after a Wi-Fi change); otherwise neither source has it.
+                let ciderOnline = await store.appleMusicReachable()
+                if track.source != .cider || ciderOnline {
                     status = "No lyrics for this song"
                     return
                 }
@@ -286,7 +289,7 @@ struct MenuView: View {
             }
             Divider()
             SecureField("Cider app token", text: $token)
-            Text("Make one in Cider → Settings → Connectivity").font(.caption2).foregroundStyle(.secondary)
+            Text("Optional. For Apple's word-timed lyrics: Cider → Settings → Connectivity").font(.caption2).foregroundStyle(.secondary)
 
             Divider()
             Button("Quit Lilt") { NSApp.terminate(nil) }

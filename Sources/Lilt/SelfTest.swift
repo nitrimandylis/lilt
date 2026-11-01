@@ -30,6 +30,11 @@ func runSelfTest() {
     precondition(segment(CGPoint(x: -5, y: 5), CGPoint(x: 15, y: 5), hits: CGRect(x: 0, y: 0, width: 10, height: 10)), "line through a box hits it")
     precondition(WordIcons.shared.symbol(for: "hearts") != nil, "a plain noun finds a symbol")
     precondition(WordIcons.shared.symbol(for: "the") == nil, "filler words get no icon")
+    // LRC, with made-up lines: plain line, repeated timestamps, an empty gap, and enhanced word tags.
+    let lrc = parseLRC("[00:01.00]first light\n[00:03.00][00:09.00]again\n[00:05.00]\n[00:06.00]<00:06.00>one <00:06.50>two")
+    precondition(lrc.lines.count == 4, "four sung lines (the repeat counts twice, the gap not at all)")
+    precondition(lrc.lines[0].words.count == 2 && lrc.lines[0].words[0].start == 1, "plain line spread over its words")
+    precondition(lrc.wordTimed && lrc.lines[2].words[1].start == 6.5, "enhanced tags give real word times")
     precondition(parseTime("00:00:10.050") == 10.05 && parseTime("12.3s") == 12.3, "time formats")
 
     print("selftest ok")

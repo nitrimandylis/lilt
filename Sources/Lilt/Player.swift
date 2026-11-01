@@ -4,6 +4,7 @@ import Foundation
 enum PlayerSource: String {
     case cider = "Cider"
     case music = "Music"
+    case spotify = "Spotify"
 }
 
 struct Track: Equatable {
@@ -12,6 +13,7 @@ struct Track: Equatable {
     var album: String
     var catalogId: String?  // Apple Music catalog id, when the player hands one over
     var source: PlayerSource
+    var duration: Double? = nil  // seconds; helps LRCLIB pick the right recording
 }
 
 struct PlaybackState {
@@ -89,7 +91,8 @@ struct CiderClient {
             artist: info["artistName"] as? String ?? "",
             album: info["albumName"] as? String ?? "",
             catalogId: catalogId,
-            source: .cider
+            source: .cider,
+            duration: (info["durationInMillis"] as? Double).map { $0 / 1000 }
         )
         return PlaybackState(
             track: track,
@@ -106,7 +109,7 @@ enum MusicApp {
             tell application "Music"
                 if player state is stopped then return ""
                 set t to current track
-                return (name of t) & tab & (artist of t) & tab & (album of t) & tab & (player position as text) & tab & (player state as text)
+                return (name of t) & tab & (artist of t) & tab & (album of t) & tab & (player position as text) & tab & (player state as text) & tab & (duration of t as text)
             end tell
         end if
         return ""
@@ -116,12 +119,42 @@ enum MusicApp {
         var error: NSDictionary?
         guard let output = script?.executeAndReturnError(&error).stringValue else { return nil }
         let parts = output.components(separatedBy: "\t")
-        guard parts.count == 5 else { return nil }
+        guard parts.count == 6 else { return nil }
 
-        // AppleScript formats the position with the system locale, so "12,5" can happen.
+        // AppleScript formats numbers with the system locale, so "12,5" can happen.
         let position = Double(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
+        let duration = Double(parts[5].replacingOccurrences(of: ",", with: "."))
         let track = Track(title: parts[0], artist: parts[1], album: parts[2],
-                          catalogId: nil, source: .music)
+                          catalogId: nil, source: .music, duration: duration)
+        return PlaybackState(track: track, position: position, isPlaying: parts[4] == "playing")
+    }
+}
+
+/// Reads Spotify over AppleScript, the same way. The script is only built when Spotify is
+/// installed, because compiling it without Spotify makes macOS ask where Spotify is.
+enum SpotifyApp {
+    static let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") != nil
+
+    static let script: NSAppleScript? = installed ? NSAppleScript(source: """
+        if application "Spotify" is running then
+            tell application "Spotify"
+                if player state is stopped then return ""
+                set t to current track
+                return (name of t) & tab & (artist of t) & tab & (album of t) & tab & (player position as text) & tab & (player state as text) & tab & ((duration of t) as text)
+            end tell
+        end if
+        return ""
+        """) : nil
+
+    static func nowPlaying() -> PlaybackState? {
+        var error: NSDictionary?
+        guard let output = script?.executeAndReturnError(&error).stringValue else { return nil }
+        let parts = output.components(separatedBy: "\t")
+        guard parts.count == 6 else { return nil }
+        let position = Double(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
+        let milliseconds = Double(parts[5].replacingOccurrences(of: ",", with: "."))  // Spotify gives ms
+        let track = Track(title: parts[0], artist: parts[1], album: parts[2],
+                          catalogId: nil, source: .spotify, duration: milliseconds.map { $0 / 1000 })
         return PlaybackState(track: track, position: position, isPlaying: parts[4] == "playing")
     }
 }
@@ -181,7 +214,12 @@ final class PlayerMonitor: ObservableObject {
             apply(state)
             return
         }
-        apply(ciderState ?? musicState)
+        let spotifyState = SpotifyApp.nowPlaying()
+        if let state = spotifyState, state.isPlaying {
+            apply(state)
+            return
+        }
+        apply(ciderState ?? musicState ?? spotifyState)
     }
 
     private func apply(_ state: PlaybackState?) {
@@ -213,8 +251,8 @@ final class PlayerMonitor: ObservableObject {
         } else if source == .cider && fresh {
             // Cider just ticked, so this value is at most one poll (0.1 s) old; split the difference.
             setAnchor(reported + 0.05)
-        } else if source == .music && abs(error) > 0.3 {
-            setAnchor(reported)  // Music.app reports an exact position every time
+        } else if source != .cider && abs(error) > 0.3 {
+            setAnchor(reported)  // Music and Spotify report an exact position every time
         }
     }
 

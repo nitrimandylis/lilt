@@ -12,8 +12,6 @@
 ![price](https://img.shields.io/badge/price-%240.00_(verci_is_%249.99)-6c63ff?style=flat-square&labelColor=111111)
 ![verci_code_included](https://img.shields.io/badge/verci_code_included-0_lines-6c63ff?style=flat-square&labelColor=111111)
 
-![lilt styles](.github/assets/styles.png)
-
 https://github.com/user-attachments/assets/9c91cb48-ae18-4c1d-b7c0-b393a86df4a3
 
 </div>
@@ -24,7 +22,7 @@ https://github.com/user-attachments/assets/9c91cb48-ae18-4c1d-b7c0-b393a86df4a3
 
 Lilt is a macOS menu-bar app that puts the lyrics of whatever you are playing over your lock screen and lights each word the moment it is sung. It is an open clone of [Verci](https://www.verci.xyz), a paid app that does the same thing, and it ships all nine of Verci's animation styles.
 
-It was built with [Claude Code](https://claude.com/claude-code) and [REA](https://github.com/morluto/rea) (reverse-engineer-anything). REA and Ghidra decompiled Verci's shipped binary to recover how each style moves: the timing curves, the layouts, the sizes, the colours. Then every line of Lilt was written fresh from those notes. No Verci code, assets, word lists or screenshots are in this repo. The images above are Lilt rendering its own sample lines.
+It was built with [Claude Code](https://claude.com/claude-code) and [REA](https://github.com/morluto/rea) (reverse-engineer-anything). REA and Ghidra decompiled Verci's shipped binary to recover how each style moves: the timing curves, the layouts, the sizes, the colours. Then every line of Lilt was written fresh from those notes. No Verci code, assets, word lists or screenshots are in this repo. The video above and the style grid below are Lilt rendering its own sample lines.
 
 Lyrics come from [LRCLIB](https://lrclib.net) by default, so it works with nothing else installed. If you use [Cider](https://cider.sh), Lilt can pull Apple Music's word-timed lyrics through it instead (the words then land on the syllable, not on a guess).
 
@@ -36,7 +34,9 @@ nick@lilt:~$ open build/Lilt.app
 
 ## 🎛️ The styles
 
-Pick one from the menu bar. The grid above runs left to right, top to bottom, in this order.
+Pick one from the menu bar. The grid runs left to right, top to bottom, in the order of the table.
+
+![lilt styles](.github/assets/styles.png)
 
 | | style | what it actually does |
 |---|---|---|

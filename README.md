@@ -14,6 +14,10 @@
 
 ![lilt styles](.github/assets/styles.png)
 
+[![lilt launch video](.github/assets/launch.jpg)](.github/assets/launch.mp4)
+
+[▶ watch the launch video (22 s, with sound)](.github/assets/launch.mp4)
+
 </div>
 
 ---

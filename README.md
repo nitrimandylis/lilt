@@ -14,7 +14,7 @@
 
 ![lilt styles](.github/assets/styles.png)
 
-<video src="https://github.com/user-attachments/assets/9c91cb48-ae18-4c1d-b7c0-b393a86df4a3" controls></video>
+https://github.com/user-attachments/assets/9c91cb48-ae18-4c1d-b7c0-b393a86df4a3
 
 </div>
 

@@ -44,7 +44,9 @@ finding close words when there is no direct match.
   highlight, paler versions of it are the text and sung-word colours. With it off:
   lyric text, highlight, secondary text pickers (default white, white, white 70%), Reset.
 - Font: SF Pro, SF Rounded, New York, Helvetica Neue.
-- Open lyrics window (a normal resizable black window for when the Mac is unlocked).
+- Lyric size slider (0.6x to 1.6x), applied to every style's base font size.
+- Open lyrics window (a normal resizable black window for when the Mac is unlocked),
+  and a Full screen button that opens it full screen (the green button works too).
 - Lyrics delay slider (-0.5 to +1.0 s); Bluetooth output adds +0.2 s automatically.
 - Cider token.
 

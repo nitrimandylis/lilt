@@ -50,7 +50,7 @@ Pick one from the menu bar. The grid runs left to right, top to bottom, in the o
 | 08 | **Branches** | a wavy stem grows through the line, each word sprouts a branch with a node and its label, the head trails ghosts |
 | 09 | **Web** | a twelve-spoke spider web; each word spins a strand from the hub to its node |
 
-Also in the menu: colours that follow the album art (auto sync) or three you pick, four fonts, a lyrics delay slider (bluetooth headphones get +0.2 s on their own), and a normal resizable window for when the mac is unlocked.
+Also in the menu: colours that follow the album art (auto sync) or three you pick, four fonts, a lyric size slider, a lyrics delay slider (bluetooth headphones get +0.2 s on their own), and a normal resizable window for when the mac is unlocked, which can go full screen.
 
 ## 🚀 Run it
 

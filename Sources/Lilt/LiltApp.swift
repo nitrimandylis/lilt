@@ -120,6 +120,10 @@ final class AppModel: ObservableObject {
         lyricsWindow.open(AnyView(LyricsView(model: self, player: player)))
     }
 
+    func toggleLyricsFullScreen() {
+        lyricsWindow.toggleFullScreen(AnyView(LyricsView(model: self, player: player)))
+    }
+
     /// Shows the lock screen overlay only while lyrics exist, music plays, and the Mac is locked.
     private func refresh() {
         let show = lyrics != nil && player.isPlaying && isLocked
@@ -181,6 +185,7 @@ final class LyricsWindow {
             newWindow.backgroundColor = .black
             newWindow.isReleasedWhenClosed = false  // so the menu can open it again after closing
             newWindow.contentMinSize = NSSize(width: 480, height: 300)
+            newWindow.collectionBehavior = [.fullScreenPrimary]  // menu bar apps don't get the green full screen button otherwise
             newWindow.contentView = NSHostingView(rootView: content)
             newWindow.center()
             newWindow.setFrameAutosaveName("LiltLyricsWindow")  // remembers size and position
@@ -188,6 +193,12 @@ final class LyricsWindow {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Opens the window if needed, then enters or leaves full screen.
+    func toggleFullScreen(_ content: AnyView) {
+        open(content)
+        window?.toggleFullScreen(nil)
     }
 }
 
@@ -285,7 +296,10 @@ struct MenuView: View {
             }
 
             Divider()
-            Button("Open lyrics window") { model.openLyricsWindow() }
+            HStack {
+                Button("Open lyrics window") { model.openLyricsWindow() }
+                Button("Full screen") { model.toggleLyricsFullScreen() }
+            }
             HStack {
                 Text("Lyrics delay")
                 Slider(value: $delay, in: -0.5...1.0, step: 0.05)

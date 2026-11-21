@@ -273,7 +273,7 @@ struct BranchesPainter {
 
         let long = length >= 1.6 * moment.averageLength
         // ponytail: Verci's x2.9 for held notes made labels collide; 1.8 keeps them readable.
-        let labelSize = size.height * 0.034 * (active ? 1.75 : 1) * (long ? 1.8 : 1)
+        let labelSize = size.height * 0.034 * lyricScale() * (active ? 1.75 : 1) * (long ? 1.8 : 1)
         let labelPoint = CGPoint(x: tip.x, y: tip.y + side * (labelSize * 0.9 + 9.6))
         drawLabel(word.text, at: labelPoint, size: labelSize, color: active ? colors.text : colors.secondary, font: font,
                   age: age, opacity: (active ? 1 : 0.7) * (1 - moment.fadeOut), anchor: .center, context: tipLayer)
@@ -422,7 +422,7 @@ struct WebPainter {
         }
 
         let long = length >= 1.6 * moment.averageLength
-        let labelSize = size.height * 0.032 * (active ? 1.8 : 1) * (long ? 1.6 : 1)
+        let labelSize = size.height * 0.032 * lyricScale() * (active ? 1.8 : 1) * (long ? 1.6 : 1)
         // The word sits just beyond the node, on the outward side.
         let outward = CGPoint(x: end.x + cos(node.angle) * (labelSize * 0.9 + 10) * 1.25,
                               y: end.y + sin(node.angle) * (labelSize * 0.9 + 10))

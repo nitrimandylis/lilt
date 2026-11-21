@@ -239,6 +239,7 @@ struct MenuView: View {
     @AppStorage("autoSyncColors") private var autoSync = true
     @AppStorage("lyricFont") private var fontChoice = LyricFont.sfPro.rawValue
     @AppStorage("lyricsDelay") private var delay = 0.0
+    @AppStorage("lyricScale") private var scale = 1.0
     @AppStorage("lyricStyle") private var styleChoice = LyricStyle.constellation.rawValue
 
     var body: some View {
@@ -275,6 +276,12 @@ struct MenuView: View {
                 ForEach(LyricFont.allCases) { choice in
                     Text(choice.rawValue).tag(choice.rawValue)
                 }
+            }
+
+            HStack {
+                Text("Lyric size")
+                Slider(value: $scale, in: 0.6...1.6, step: 0.05)
+                Text(String(format: "%.2fx", scale)).monospacedDigit().frame(width: 52, alignment: .trailing)
             }
 
             Divider()

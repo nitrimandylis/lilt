@@ -157,7 +157,7 @@ struct CodePainter {
 
         // Size the text so the longer of the two rows fits 80% of the width.
         let longest = max(previous?.glyphs.count ?? 0, current.glyphs.count, 12)
-        let fontSize = min(size.height * 0.06, size.width * 0.8 / (CGFloat(longest) * 0.6))
+        let fontSize = min(size.height * 0.06 * lyricScale(), size.width * 0.8 / (CGFloat(longest) * 0.6))
         let font = Font.system(size: fontSize, weight: .bold, design: .monospaced)
         let charWidth = context.resolve(Text("M").font(font)).measure(in: size).width
 

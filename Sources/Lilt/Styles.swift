@@ -179,7 +179,7 @@ struct WallScene: View {
     private func fontSize(_ item: WallItem, wallHeight: CGFloat, width: CGFloat) -> CGFloat {
         let length = max(item.word.end - item.word.start, 0.01)
         let ratio = min(max(sqrt(length / item.averageLength), 0.75), 1.55)
-        var size = wallHeight * 0.075 * ratio / 0.7  // 0.7 is roughly the cap height of SF Pro per point
+        var size = wallHeight * 0.075 * ratio / 0.7 * lyricScale()  // 0.7 is roughly the cap height of SF Pro per point
         let measured = (item.word.text.lowercased() as NSString)
             .size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width
         if measured > width * 0.62 {
@@ -326,7 +326,7 @@ struct FisheyeScene: View {
         // Current word full size; neighbours at 58% and 68% opacity, like a magnifier's rim.
         let scale: CGFloat = row.role == 0 ? 1 : 0.58
         let opacity: Double = row.role == 0 ? 1 : 0.68
-        var fontSize = lensHeight * 0.42 * 0.42 * scale
+        var fontSize = lensHeight * 0.42 * 0.42 * scale * lyricScale()
         let measured = (row.word.text.lowercased() as NSString)
             .size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .semibold)]).width
         if measured > width * 0.8 { fontSize *= width * 0.8 / measured }

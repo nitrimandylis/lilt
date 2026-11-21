@@ -8,6 +8,12 @@ enum Theme {
     static let defaultSecondary = "#FFFFFFB3"  // words already sung (white at 70%)
 }
 
+/// The "Lyric size" slider, 0.6x to 1.6x. Every style multiplies its base font size by this.
+func lyricScale() -> CGFloat {
+    let stored = UserDefaults.standard.double(forKey: "lyricScale")
+    return stored == 0 ? 1 : CGFloat(stored)  // 0 means never set
+}
+
 enum LyricFont: String, CaseIterable, Identifiable {
     case sfPro = "SF Pro"
     case sfRounded = "SF Rounded"

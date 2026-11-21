@@ -165,7 +165,7 @@ struct ConstellationPainter {
     private let longScale: CGFloat = 1.2    // held notes get this much more on top
 
     private func baseFontSize(_ size: CGSize) -> CGFloat {
-        return size.width * 0.72 * 0.026
+        return size.width * 0.72 * 0.026 * lyricScale()
     }
 
     /// The layout for one line, worked out once and cached. Lines are laid out in order,
@@ -173,7 +173,7 @@ struct ConstellationPainter {
     private func placedWords(_ index: Int, context: GraphicsContext, size: CGSize) -> [PlacedWord] {
         let first = lines.first?.start ?? 0
         let last = lines.last?.end ?? 0
-        let key = "\(lines.count)|\(first)|\(last)|\(Int(size.width))x\(Int(size.height))|\(font.rawValue)"
+        let key = "\(lines.count)|\(first)|\(last)|\(Int(size.width))x\(Int(size.height))|\(font.rawValue)|\(lyricScale())"
         if layouts.key != key {
             layouts.key = key
             layouts.lines = [:]
